@@ -1,0 +1,7 @@
+interface:
+  display_name: "Code Clarity"
+  short_description: "Readable code through naming, flow, and local conventions"
+  default_prompt: "Use $code-clarity to review this code for clarity while preserving the repository's local style."
+
+policy:
+  allow_implicit_invocation: true

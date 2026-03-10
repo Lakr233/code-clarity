@@ -1,10 +1,10 @@
 ---
 name: code-clarity
-description: 'Write readable, intention-revealing code through precise naming, consistent abstraction levels, and the early-return pattern. Use when naming feels off, logic is hard to follow, functions are doing too much, or nested conditionals are making flow hard to trace. Covers function/method naming, boolean naming, guard clauses, abstraction-level consistency, and class/struct responsibilities. Swift-primary with Go, TypeScript, and Python equivalents throughout.'
+description: 'Write readable, intention-revealing code through precise naming, consistent abstraction levels, repository-aware conventions, and the early-return pattern. Use when naming feels off, logic is hard to follow, functions are doing too much, nested conditionals are making flow hard to trace, or a refactor should preserve the codebase''s local style. Covers function/method naming, boolean naming, guard clauses, abstraction-level consistency, repository conventions, and class/struct responsibilities. Swift-primary with Go, TypeScript, and Python equivalents throughout.'
 license: MIT
 metadata:
   author: qaq
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Code Clarity Framework
@@ -13,17 +13,19 @@ A practical framework for writing code that communicates intent clearly. The cen
 
 This framework focuses on the micro-level of software design — the decisions made at the function, method, and class level — and complements macro-level architecture thinking.
 
-## Core Principle
+## Core Principles
 
 **Code is written once but read hundreds of times.** Every name, every function boundary, every conditional structure is a message to the next reader (usually yourself, six months later). Clarity is not a style preference — it is a correctness property: unclear code is one misunderstanding away from a bug.
 
+**Clarity is partly local to a repository.** A refactor that ignores a codebase's existing naming, file organization, and control-flow habits can make the result less readable even when the individual function improves in isolation.
+
 ## Scoring
 
-**Goal: 10/10.** When reviewing or writing code, rate it 0–10 on clarity. A 10/10 has names that read like prose, functions that do exactly one thing at one level of abstraction, guard clauses that eliminate nesting, and structures whose responsibilities are obvious from their name alone. Provide the current score and exactly what to change to reach 10/10.
+**Goal: 10/10.** When reviewing or writing code, rate it 0–10 on clarity. A 10/10 has names that read like prose, functions that do exactly one thing at one level of abstraction, guard clauses that eliminate nesting, structures whose responsibilities are obvious from their name alone, and changes that match the repository's established local conventions. Provide the current score and exactly what to change to reach 10/10.
 
 ## The Code Clarity Framework
 
-Five principles for writing code that communicates clearly:
+Six principles for writing code that communicates clearly:
 
 ---
 
@@ -141,7 +143,36 @@ See: [references/abstraction-levels.md](references/abstraction-levels.md)
 
 ---
 
-### 5. Class and Struct Design: Single Responsibility, Honest Names
+### 5. Repository Conventions: Clarity Is Also Local
+
+**Core concept:** Clarity is not purely universal. It is partly local to a codebase. A change is clearer when it extends the naming, file organization, layering, and UI construction patterns that the surrounding repository already uses. A technically sound refactor that ignores established local conventions often makes the codebase harder to read, not easier.
+
+**Why it works:** Readers build fluency from repetition. If one repository consistently uses `Type+Feature.swift`, `is/has/can` booleans, and `guard`-heavy control flow, then a new contribution that follows those patterns is faster to parse than one introducing a different but equally reasonable style. Local consistency compounds readability.
+
+**Key insights:**
+- Start by sampling representative files before prescribing style changes
+- Identify local suffixes and split patterns such as `+Delegate`, `+Layout`, `+DataSource`, or module-specific equivalents
+- Preserve repository vocabulary unless it is actively misleading
+- Prefer extending an existing style system over introducing a parallel one
+- If the codebase already uses a clear exception to generic advice, follow the repository unless the exception is causing real defects
+- Review comments and logs for tone: some codebases are terse and operational, others explanatory and educational
+- Clarity advice should be phrased as: "make this read like the rest of the good code in the repository"
+
+**Code applications:**
+
+| Problem | Generic Advice | Repository-aware Advice |
+|---------|----------------|-------------------------|
+| **File split** | "Put everything in one file to reduce jumping" | Match the local split strategy if the repo already uses `Type+Feature.swift` consistently |
+| **Naming** | "Rename all `Manager` types" | Keep existing role suffixes if the repository uses them with stable meaning |
+| **UI layout** | "Use Auto Layout everywhere" | Preserve a mixed style if the codebase uses constraints for page shells and manual frame layout for high-frequency subviews |
+| **Control flow** | "Use one preferred pattern globally" | Match local `guard`/early-return habits if they already make the module read consistently |
+| **Comments** | "Add more comments" | Match the house style: brief rationale comments in terse codebases, richer guidance in instructional ones |
+
+See: [references/repository-conventions.md](references/repository-conventions.md)
+
+---
+
+### 6. Class and Struct Design: Single Responsibility, Honest Names
 
 **Core concept:** A class or struct should have one reason to change. Its name should be specific enough that adding a second responsibility feels obviously wrong. Vague names like `Manager`, `Helper`, and `Util` are a signal that responsibilities have not been thought through.
 
@@ -180,6 +211,7 @@ See: [references/class-struct-design.md](references/class-struct-design.md)
 | **Flag parameters** | `save(user, force: true)` — the caller knows two behaviors exist | Split: `save(user)`, `forceSave(user)` |
 | **Mixed abstraction** | `processOrder()` calls `applyDiscount()` but also does `price * rate` inline | Keep one level: either all calls or all computation |
 | **Accumulating types** | Adding to `UserManager` because "it's user-related" | Ask: would this responsibility cause the class to change for a different reason? If yes, it belongs elsewhere |
+| **Repository-blind refactors** | Improving one function while making it read unlike the surrounding module | Preserve the local naming, file split, and control-flow patterns used by the rest of the repository |
 | **Comment-instead-of-rename** | `// this is the active users list` above `var data` | The name should be `activeUsers`; the comment is evidence of a naming failure |
 | **Long parameter lists** | `createRequest(url:method:headers:body:timeout:retry:)` | Group into `RequestConfiguration` |
 
@@ -197,6 +229,32 @@ See: [references/class-struct-design.md](references/class-struct-design.md)
 | Can you describe every class responsibility in one sentence without "and"? | Type has multiple responsibilities | Split by responsibility |
 | Are `Manager`, `Helper`, or `Util` in any type names? | Responsibilities are not well-defined | Replace with specific names |
 | Does any function take more than 3 parameters? | Interface is too wide | Group related parameters into a type |
+| Does the proposed refactor still read like the surrounding repository? | Change is clearer in isolation but less native in context | Re-align naming, file organization, and control-flow with the local house style |
+
+---
+
+## Review Workflow
+
+Use this sequence when the skill is applied:
+
+1. Sample 3–5 representative files from the same module or layer before giving advice.
+2. Infer local conventions: naming suffixes, file split patterns, comment density, control-flow style, and UI construction habits.
+3. Score current clarity from 0–10.
+4. Identify the smallest set of changes that would move the code toward 10/10.
+5. Prefer repository-aligned fixes over generic rewrites when both are equally clear.
+6. If a repository convention is genuinely harmful, say so explicitly and justify breaking it.
+
+### Suggested Output Format
+
+When reviewing code with this skill, prefer this structure:
+
+1. `Clarity score: X/10`
+2. `What is already clear`
+3. `What is confusing`
+4. `What to change next`
+5. `Repository conventions to preserve`
+
+This keeps the advice concrete and makes the tradeoff between universal clarity and local consistency explicit.
 
 ---
 
@@ -205,6 +263,7 @@ See: [references/class-struct-design.md](references/class-struct-design.md)
 - [naming-conventions.md](references/naming-conventions.md): Full naming rules by category — functions, booleans, classes, parameters, with Swift/Go/TypeScript examples
 - [early-return.md](references/early-return.md): Guard clause pattern, Swift `guard`, Go idioms, when not to use early return
 - [function-design.md](references/function-design.md): Single responsibility, abstraction level consistency, parameter design, side effects
+- [repository-conventions.md](references/repository-conventions.md): How to infer a repository's local house style and keep clarity improvements aligned with it
 - [abstraction-levels.md](references/abstraction-levels.md): Step-down rule, mixing levels as a code smell, organizing call hierarchies
 - [class-struct-design.md](references/class-struct-design.md): Single responsibility, Swift struct vs class decision, coupling and cohesion, naming types
 
