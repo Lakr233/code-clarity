@@ -4,7 +4,7 @@ description: 'Write readable, intention-revealing code through precise naming, c
 license: MIT
 metadata:
   author: qaq
-  version: "1.1.0"
+  version: "1.1.1"
 ---
 
 # Code Clarity Framework
@@ -25,7 +25,7 @@ This framework focuses on the micro-level of software design — the decisions m
 
 ## The Code Clarity Framework
 
-Seven principles for writing code that communicates clearly:
+Eight principles for writing code that communicates clearly:
 
 ---
 
@@ -131,6 +131,9 @@ See: [references/function-design.md](references/function-design.md)
 - Store a `Task` only when the owner must cancel, replace, or coalesce it later
 - Fire-and-forget async work should usually be a local `Task` or `Task.detached`, not another stored optional property
 - Do not use optional as a vague state marker when an enum case can name the state directly
+- In SwiftUI apps, prefer one observable app/store object passed through the view tree over many tiny dependency-injection seams
+- Put UI-facing snapshots in small context/configuration value types when several settings must be applied together
+- Views should read state and send intent; lifecycle transitions belong in the store/controller that owns the state
 
 **Code applications:**
 
@@ -141,6 +144,29 @@ See: [references/function-design.md](references/function-design.md)
 | **Optional-as-state** | `currentRequest: Request?`, `isLoading: Bool`, `error: Error?` | `enum LoadState { case idle, loading(Request), failed(Error), loaded(Result) }` |
 | **Saved one-shot task** | `var refreshTask: Task<Void, Never>?` that is never cancelled | Create the task where the async work starts and let it finish |
 | **Replaceable task** | Multiple optional task properties cancelled in bulk | Keep only tasks that must be cancelled/replaced, or wrap them in a named lifecycle state |
+
+**SwiftUI data-flow check:**
+
+```swift
+@Observable final class AppStore {
+  private(set) var connectionState: ConnectionState = .disconnected
+  private(set) var assistantActivity: AssistantActivity = .idle
+  var configuration = AppConfiguration()
+
+  var isConnected: Bool { connectionState == .connected }
+
+  func connect() {
+    guard case .disconnected = connectionState else { return }
+    connectionState = .connecting
+    Task { await runConnection() }
+  }
+}
+```
+
+The important part is not the exact names. The important part is that `connectionState`,
+`assistantActivity`, and `configuration` each have one owner and each represent one coherent
+piece of state. Do not spread the same lifecycle across independent `@State`, `@Binding`,
+`@Published`, or optional properties.
 
 ---
 
@@ -200,7 +226,39 @@ See: [references/repository-conventions.md](references/repository-conventions.md
 
 ---
 
-### 7. Class and Struct Design: Single Responsibility, Honest Names
+### 7. Error Boundaries: Handle Failures at the Right Level
+
+**Core concept:** Error handling should communicate intent just as clearly as names do. User-facing
+operations should surface failures. Best-effort background refreshes may fail quietly, but should
+usually leave a trace. Internal invariants should fail loudly in debug instead of being silently
+papered over.
+
+**Why it works:** Broad `do/catch` blocks and casual `try?` make different failures look identical.
+The reader cannot tell whether an error is expected, ignorable, user-visible, or a bug. Clear error
+boundaries keep the happy path flat while preserving the information needed to debug production
+behavior.
+
+**Key insights:**
+- Validate preconditions with early returns before entering `do/catch`
+- Keep `do/catch` scoped to the operation that can actually throw
+- Avoid `try?` when the failure changes user-visible state or lifecycle state
+- Use `try?` only for genuinely disposable cleanup, probing, or cache-style best-effort work
+- Background failures should usually trace or log at debug level rather than vanish
+- Use assertions for impossible states in debug, then return safely in release
+- Do not wrap optional binding inside a large `do/catch`; unwrap first, then run the throwing work
+
+**Code applications:**
+
+| Problem | Unclear | Clear |
+|---------|---------|-------|
+| **Validation inside catch** | `do { guard let data else { throw ... }; decode(data) } catch { ... }` | `guard let data else { return error }; do { decode(data) } catch { ... }` |
+| **Silent lifecycle failure** | `try? startCapture()` | `do { try startCapture() } catch { state = .stopped; emit(error) }` |
+| **Best-effort refresh** | `if let event = try? await refresh() { append(event) }` | `do { guard let event = try await refresh() else { return }; append(event) } catch { trace.debug(...) }` |
+| **Impossible optional** | `if let session { try await session.send(...) }` in connected state | `guard let session else { assertionFailure(...); return }` |
+
+---
+
+### 8. Class and Struct Design: Single Responsibility, Honest Names
 
 **Core concept:** A class or struct should have one reason to change. Its name should be specific enough that adding a second responsibility feels obviously wrong. Vague names like `Manager`, `Helper`, and `Util` are a signal that responsibilities have not been thought through.
 
@@ -244,6 +302,8 @@ See: [references/class-struct-design.md](references/class-struct-design.md)
 | **Long parameter lists** | `createRequest(url:method:headers:body:timeout:retry:)` | Group into `RequestConfiguration` |
 | **Boolean state piles** | Several `is*` flags must be updated together or cannot validly overlap | Replace them with one enum or state value that names each valid state |
 | **Stored one-shot tasks** | Keeping `Task?` properties for work that is never cancelled or replaced | Keep task storage only for real lifecycle ownership; otherwise launch locally and let it finish |
+| **Casual `try?`** | Important lifecycle or user-facing failures disappear | Use scoped `do/catch`; trace best-effort failures and surface user-facing failures |
+| **Broad error wrapper** | Validation, decoding, dispatch, and side effects all share one catch block | Early-return preconditions first, then catch only the throwing operation |
 
 ---
 
@@ -258,6 +318,8 @@ See: [references/class-struct-design.md](references/class-struct-design.md)
 | Does every boolean variable start with `is`, `has`, `can`, or `should`? | Booleans require context to interpret | Rename with appropriate prefix |
 | Are several booleans or optionals describing one lifecycle? | Hidden state machine with possible impossible combinations | Replace with an enum or grouped state value |
 | Is a `Task` stored because the owner must cancel or replace it later? | Task storage is just bookkeeping noise | Make it local/fire-and-forget, or name the lifecycle that owns it |
+| Is `try?` hiding a failure that changes lifecycle or UI state? | The code is silent in exactly the place users need feedback | Use scoped `do/catch`, surface or trace according to the boundary |
+| Are precondition guards inside a broad `do/catch`? | Expected validation is mixed with exceptional failure | Move guards before `do/catch` and return early |
 | Can you describe every class responsibility in one sentence without "and"? | Type has multiple responsibilities | Split by responsibility |
 | Are `Manager`, `Helper`, or `Util` in any type names? | Responsibilities are not well-defined | Replace with specific names |
 | Does any function take more than 3 parameters? | Interface is too wide | Group related parameters into a type |
