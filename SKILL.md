@@ -25,7 +25,7 @@ This framework focuses on the micro-level of software design — the decisions m
 
 ## The Code Clarity Framework
 
-Six principles for writing code that communicates clearly:
+Seven principles for writing code that communicates clearly:
 
 ---
 
@@ -116,7 +116,35 @@ See: [references/function-design.md](references/function-design.md)
 
 ---
 
-### 4. Abstraction Levels: Hierarchy Must Be Consistent
+### 4. State Modeling: Related Flags Are a Hidden State Machine
+
+**Core concept:** When several booleans, optionals, or task properties describe the same lifecycle, they are usually a state machine written in the least clear form. Make the lifecycle explicit with an enum or a small value type so impossible combinations cannot be represented.
+
+**Why it works:** Scattered flags force every caller to keep them synchronized. A reader has to ask whether `isConnected`, `isEnded`, `isThinking`, `isSpeaking`, `activeTask`, and `pendingTask` can overlap, and bugs appear when one branch updates three of them but forgets the fourth. A single state value makes the valid states visible and gives each transition one place to live.
+
+**Key insights:**
+- If states are mutually exclusive, use an enum: `.idle`, `.connecting`, `.connected`, `.ended`
+- If values must update together, group them in the enum payload or a small state struct
+- Avoid lifecycle pairs like `isConnected` + `isEnded`; prefer `connectionState`
+- Avoid activity flag piles like `isThinking`, `isSpeaking`, `isToolCalling`; prefer one `activity`
+- Computed booleans such as `connectionState.isConnected` are fine when they are aliases for a real state, not independent storage
+- Store a `Task` only when the owner must cancel, replace, or coalesce it later
+- Fire-and-forget async work should usually be a local `Task` or `Task.detached`, not another stored optional property
+- Do not use optional as a vague state marker when an enum case can name the state directly
+
+**Code applications:**
+
+| Problem | Unclear | Clear |
+|---------|---------|-------|
+| **Connection lifecycle** | `isConnected`, `isEnded`, `isReconnecting` | `enum ConnectionState { case disconnected, connecting, connected, reconnecting, ended }` |
+| **Mutually exclusive activity** | `isThinking`, `isSpeaking`, `isToolCalling`, `isPlayingAudio` | `enum AssistantActivity { case idle, thinking, speaking, usingTool, playingAudio }` |
+| **Optional-as-state** | `currentRequest: Request?`, `isLoading: Bool`, `error: Error?` | `enum LoadState { case idle, loading(Request), failed(Error), loaded(Result) }` |
+| **Saved one-shot task** | `var refreshTask: Task<Void, Never>?` that is never cancelled | Create the task where the async work starts and let it finish |
+| **Replaceable task** | Multiple optional task properties cancelled in bulk | Keep only tasks that must be cancelled/replaced, or wrap them in a named lifecycle state |
+
+---
+
+### 5. Abstraction Levels: Hierarchy Must Be Consistent
 
 **Core concept:** Every scope — module, class, function — should operate at a single, coherent level of abstraction. High-level code manages strategy and orchestration. Low-level code handles mechanism and detail. Mixing these two in the same scope is one of the most common and most damaging readability failures.
 
@@ -143,7 +171,7 @@ See: [references/abstraction-levels.md](references/abstraction-levels.md)
 
 ---
 
-### 5. Repository Conventions: Clarity Is Also Local
+### 6. Repository Conventions: Clarity Is Also Local
 
 **Core concept:** Clarity is not purely universal. It is partly local to a codebase. A change is clearer when it extends the naming, file organization, layering, and UI construction patterns that the surrounding repository already uses. A technically sound refactor that ignores established local conventions often makes the codebase harder to read, not easier.
 
@@ -172,7 +200,7 @@ See: [references/repository-conventions.md](references/repository-conventions.md
 
 ---
 
-### 6. Class and Struct Design: Single Responsibility, Honest Names
+### 7. Class and Struct Design: Single Responsibility, Honest Names
 
 **Core concept:** A class or struct should have one reason to change. Its name should be specific enough that adding a second responsibility feels obviously wrong. Vague names like `Manager`, `Helper`, and `Util` are a signal that responsibilities have not been thought through.
 
@@ -214,6 +242,8 @@ See: [references/class-struct-design.md](references/class-struct-design.md)
 | **Repository-blind refactors** | Improving one function while making it read unlike the surrounding module | Preserve the local naming, file split, and control-flow patterns used by the rest of the repository |
 | **Comment-instead-of-rename** | `// this is the active users list` above `var data` | The name should be `activeUsers`; the comment is evidence of a naming failure |
 | **Long parameter lists** | `createRequest(url:method:headers:body:timeout:retry:)` | Group into `RequestConfiguration` |
+| **Boolean state piles** | Several `is*` flags must be updated together or cannot validly overlap | Replace them with one enum or state value that names each valid state |
+| **Stored one-shot tasks** | Keeping `Task?` properties for work that is never cancelled or replaced | Keep task storage only for real lifecycle ownership; otherwise launch locally and let it finish |
 
 ---
 
@@ -226,6 +256,8 @@ See: [references/class-struct-design.md](references/class-struct-design.md)
 | Does each function do exactly one thing? | Function has "and" in its description | Split at the "and" |
 | Does each function operate at one level of abstraction? | Orchestration mixed with implementation | Extract the lower-level operations into named functions |
 | Does every boolean variable start with `is`, `has`, `can`, or `should`? | Booleans require context to interpret | Rename with appropriate prefix |
+| Are several booleans or optionals describing one lifecycle? | Hidden state machine with possible impossible combinations | Replace with an enum or grouped state value |
+| Is a `Task` stored because the owner must cancel or replace it later? | Task storage is just bookkeeping noise | Make it local/fire-and-forget, or name the lifecycle that owns it |
 | Can you describe every class responsibility in one sentence without "and"? | Type has multiple responsibilities | Split by responsibility |
 | Are `Manager`, `Helper`, or `Util` in any type names? | Responsibilities are not well-defined | Replace with specific names |
 | Does any function take more than 3 parameters? | Interface is too wide | Group related parameters into a type |
