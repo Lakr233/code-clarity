@@ -1,17 +1,23 @@
 # Code Clarity
 
-A Claude Code skill for writing readable, intention-revealing code — precise naming, consistent abstraction levels, repository-aware conventions, and the early-return pattern. Swift-primary with Go, TypeScript, and Python equivalents throughout.
+A Claude Code skill for writing readable, intention-revealing code — precise naming, consistent abstraction levels, one-object-per-file organization, hoisted named constants, formatter-deferred mechanical consistency, repository-aware conventions, and the early-return pattern. **Swift, TypeScript, and Electron first-class**, with Go and Python equivalents throughout.
 
 ## What This Covers
 
 | Topic | Description |
 |-------|-------------|
-| **Naming Conventions** | Function, boolean, class, and parameter naming rules with cross-language examples |
-| **Early Return** | Guard clause pattern — Swift `guard` and Go-style early exit, when to use and when not to |
+| **Naming Conventions** | Function, boolean, class, parameter, and TS interface/suffix naming with cross-language examples |
+| **Early Return** | Guard clause pattern — Swift `guard`, Go-style early exit, TS guards, when to use and when not to |
 | **Function Design** | Single responsibility, one abstraction level per function, parameter design |
+| **State Modeling** | Replacing boolean piles with Swift enums and TypeScript discriminated unions / schemas |
 | **Abstraction Levels** | Keeping orchestration and implementation separate, the step-down rule, layered architecture |
 | **Repository Conventions** | How to infer and preserve a codebase's existing naming, layout, and file-organization style |
+| **Error Boundaries** | Handling failures at the right level; Swift `do/catch` and TS `unknown`/Result idioms |
 | **Class & Struct Design** | Single responsibility, Swift struct vs class decisions, coupling and cohesion |
+| **File Organization** | One object per file, file naming, domain folders, explicit barrels |
+| **Named Constants** | Hoisting and scoping fixed values — Swift `fileprivate let`, TS module-top `const` and `as const` |
+| **Formatting Consistency** | The Prettier pattern — deferring mechanical style to a formatter, config, and CI gate |
+| **Electron Boundaries** | Main / preload / renderer separation and one typed, allowlisted IPC bridge |
 
 ## Install
 
@@ -27,8 +33,12 @@ Once installed, the skill activates when you ask Claude to:
 - Refactor nested conditionals into early-return style
 - Audit a class for single-responsibility violations
 - Check abstraction level consistency in a module
+- Split a grab-bag file into one-object-per-file modules
+- Hoist magic numbers and strings into named, correctly-scoped constants
+- Set up formatter-based mechanical consistency (Prettier + CI gate)
+- Review an Electron app's main/preload/renderer boundary and typed IPC surface
 - Review a change for clarity while preserving the repository's existing style
-- Design a new type with appropriate struct/class choice
+- Design a new type with appropriate struct/class choice, or a TS discriminated union
 
 **Example prompts:**
 
@@ -62,27 +72,33 @@ When the skill is working well, it should:
 
 ```
 code-clarity/
-├── SKILL.md                        # Main skill — framework, scoring, quick diagnostics
+├── SKILL.md                        # Main skill — 12 principles, scoring, quick diagnostics
 ├── agents/
 │   └── openai.yaml                 # UI metadata for skill lists and chips
 └── references/
     ├── naming-conventions.md       # Full naming rules by category
-    ├── early-return.md             # Guard clause pattern with Swift and Go examples
+    ├── early-return.md             # Guard clause pattern with Swift, Go, and TS examples
     ├── function-design.md          # Single responsibility, parameters, side effects
     ├── repository-conventions.md   # How to match and extend an existing house style
     ├── abstraction-levels.md       # Level consistency, step-down rule, layering
-    └── class-struct-design.md      # SRP, struct vs class, coupling and cohesion
+    ├── class-struct-design.md      # SRP, struct vs class, coupling and cohesion
+    ├── file-organization.md        # One object per file, file naming, barrels, named constants
+    ├── formatting-consistency.md   # The Prettier pattern — formatter-owned mechanical style
+    └── typescript-and-electron.md  # TS naming/types/errors + Electron main/preload/renderer + typed IPC
 ```
 
 ## Design Philosophy
 
-This skill is shaped by two complementary perspectives:
+This skill is shaped by complementary perspectives:
 
 - **Go's pragmatism** — handle errors early, keep the happy path flat, avoid unnecessary nesting
 - **Swift's expressiveness** — `guard let`, protocol-oriented design, value semantics for data
+- **TypeScript's structural typing** — discriminated unions over boolean piles, `as const` registries, schemas at the boundary
+- **Electron's trust model** — three processes, one typed allowlisted bridge, no Node in the renderer
+- **Prettier's stance** — encode mechanical style once, enforce it in CI, stop debating it
 - **Repository-local clarity** — clarity is partly local, so preserve the codebase's existing vocabulary and file patterns before introducing a new one
 
-The underlying principle is language-agnostic: **code is written once but read many times**. Every name and structural decision is a communication decision.
+The underlying principle is language-agnostic: **code is written once but read many times**. Every name, file boundary, constant, and structural decision is a communication decision.
 
 ## Related Skills
 
