@@ -76,7 +76,7 @@ When a comment precedes a block of code to explain what it does, that block is p
 
 ```swift
 // Avoid
-func processCheckout() {
+func processCheckout() async throws {
     // Validate cart
     guard !cart.items.isEmpty else { throw CartError.empty }
     guard cart.total > 0 else { throw CartError.invalidTotal }
@@ -93,7 +93,7 @@ func processCheckout() {
 }
 
 // Prefer — comments become function names
-func processCheckout() throws {
+func processCheckout() async throws {
     try validateCart()
     let payload = buildCheckoutPayload()
     try await api.submitOrder(payload)

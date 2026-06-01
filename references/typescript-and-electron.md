@@ -2,7 +2,7 @@
 
 This reference carries the TypeScript-first and Electron-first material: naming, type modeling with discriminated unions and schemas, async/error idioms, import/export hygiene, and the main/preload/renderer process boundary with a typed IPC bridge. For the universal principles (single responsibility, abstraction levels, early return) see the other references; this file is about applying them with TypeScript and Electron grain.
 
-The examples use a neutral, illustrative desktop-app domain (documents, uploads, settings); apply the same shapes to your own domain.
+The examples use a neutral, illustrative desktop-app domain (documents, uploads, settings); apply the same shapes to your own domain. They are written in a no-semicolon house style — a valid Prettier configuration (`semi: false`), not a contradiction of the formatter defaults in [formatting-consistency.md](formatting-consistency.md); the point is that one config is applied uniformly, not which one.
 
 ---
 
@@ -22,7 +22,7 @@ function sanitizeSlug(raw: string): string { }
 // Queries / finders — describe the result
 function loadDocument(id: string): Document | undefined { }
 function listDocuments(): Document[] { }
-function getWindowState(id: number): WindowState | undefined { }
+function findWindowState(id: number): WindowState | undefined { }
 
 // Predicates — is / has / can / should, return boolean
 function isLoopbackUrl(url?: string): boolean { }
@@ -237,13 +237,13 @@ try {
 - **Named exports for logic; default export only for a page/route component.** Packages, main-process, and preload code use named exports exclusively. A `renderer/pages/SettingsPage.tsx` may `export default`. This keeps refactors and find-references reliable.
 - **`import type` for type-only imports.** It documents intent and lets the bundler erase the import entirely.
   ```ts
-  import type { IpcServer } from '@app/core/ipc'
-  import type { Document, Message } from '../../shared/types'
+  import type { IpcServer } from '@example/core/ipc'
+  import type { Document, Workspace } from '../../shared/types'
   ```
 - **Import ordering** (top to bottom), with a blank line between groups:
   1. Node built-ins (`path`, `os`, `fs`, `child_process`)
   2. Third-party packages (`electron`, `react`, `zod`)
-  3. Internal monorepo packages (`@app/shared/...`)
+  3. Internal monorepo packages (`@example/shared/...`)
   4. Local relative imports (`./service-context`)
 - **Explicit barrels**, not `export *` (see [file-organization.md](file-organization.md)).
 
@@ -270,7 +270,7 @@ No `fs`, `child_process`, `electron` main APIs, native modules, or secret materi
 
 ```ts
 // renderer — WRONG: reaches across the boundary
-import { readFile } from 'fs'
+import { readFile } from 'fs/promises'
 const doc = await readFile(path)
 
 // renderer — RIGHT: ask main over the typed bridge
@@ -320,6 +320,7 @@ new BrowserWindow({
     preload: bootstrapPreloadPath,
     contextIsolation: true,
     nodeIntegration: false,
+    sandbox: true,
   },
 })
 ```

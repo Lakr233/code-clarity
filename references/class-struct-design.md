@@ -93,8 +93,8 @@ class DatabaseConnection {
 }
 
 @Observable
-class ChatViewModel {
-    var messages: [Message] = []
+class DocumentListViewModel {
+    var documents: [Document] = []
     var isLoading = false
     // SwiftUI observes mutations on this shared reference
 }
@@ -106,9 +106,9 @@ In modern Swift (iOS 17+, Swift 5.9+), `@Observable` requires `class`. This is a
 
 ```swift
 @Observable
-class ConversationViewModel {
-    var messages: [Message] = []
-    var isStreaming = false
+class FeedViewModel {
+    var documents: [Document] = []
+    var isRefreshing = false
     var errorMessage: String?
 }
 ```

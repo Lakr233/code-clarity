@@ -1,10 +1,10 @@
 ---
 name: code-clarity
-description: 'Write readable, intention-revealing code through precise naming, consistent abstraction levels, one-object-per-file organization, hoisted named constants, formatter-deferred mechanical consistency, repository-aware conventions, and the early-return pattern. Use when naming feels off, logic is hard to follow, functions are doing too much, nested conditionals obscure flow, files mix many exports, magic numbers are inline, formatting is inconsistent, or a refactor should preserve the codebase''s local style. Covers function/method naming, boolean naming, guard clauses, abstraction-level consistency, file organization, module-level constants, Prettier-style formatting, repository conventions, class/struct responsibilities, and Electron main/preload/renderer boundaries. Swift, TypeScript, and Electron first-class, with Go and Python equivalents throughout.'
+description: 'Write readable, intention-revealing code through precise naming, consistent abstraction levels, one-object-per-file organization, hoisted named constants, formatter-deferred mechanical consistency, repository-aware conventions, the early-return pattern, and testable seam design. Use when naming feels off, logic is hard to follow, functions are doing too much, nested conditionals obscure flow, files mix many exports, magic numbers are inline, formatting is inconsistent, the same logic is reimplemented at many call sites, tests lean on mocks and heavy dependency injection, or a refactor should preserve the codebase''s local style. Covers function/method naming, boolean naming, guard clauses, abstraction-level consistency, file organization, module-level constants, Prettier-style formatting, repository conventions, class/struct responsibilities, Electron main/preload/renderer boundaries, and dependency/seam design (one canonical implementation, protocol/subclass seams over closures, minimal DI, fakes over mocks). Swift, TypeScript, and Electron first-class, with Go and Python equivalents throughout.'
 license: MIT
 metadata:
   author: qaq
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # Code Clarity Framework
@@ -27,7 +27,7 @@ This framework focuses on the micro-level of software design — the decisions m
 
 ## The Code Clarity Framework
 
-Twelve principles for writing code that communicates clearly. Principles 1–8 are structural and language-agnostic; principles 9–12 cover file organization, named constants, mechanical formatting consistency, and the Electron process boundary — the areas most often neglected in TypeScript and Electron codebases:
+Thirteen principles for writing code that communicates clearly. Principles 1–8 are structural and language-agnostic; principles 9–12 cover file organization, named constants, mechanical formatting consistency, and the Electron process boundary — the areas most often neglected in TypeScript and Electron codebases; principle 13 covers dependencies and seam design — one canonical implementation, seams only where behavior truly varies, and testing without drowning in mocks and dependency injection:
 
 ---
 
@@ -127,13 +127,13 @@ See: [references/function-design.md](references/function-design.md)
 
 **Core concept:** When several booleans, optionals, or task properties describe the same lifecycle, they are usually a state machine written in the least clear form. Make the lifecycle explicit with an enum or a small value type so impossible combinations cannot be represented.
 
-**Why it works:** Scattered flags force every caller to keep them synchronized. A reader has to ask whether `isConnected`, `isEnded`, `isThinking`, `isSpeaking`, `activeTask`, and `pendingTask` can overlap, and bugs appear when one branch updates three of them but forgets the fourth. A single state value makes the valid states visible and gives each transition one place to live.
+**Why it works:** Scattered flags force every caller to keep them synchronized. A reader has to ask whether `isConnected`, `isEnded`, `isBuffering`, `isPlaying`, `activeTask`, and `pendingTask` can overlap, and bugs appear when one branch updates three of them but forgets the fourth. A single state value makes the valid states visible and gives each transition one place to live.
 
 **Key insights:**
 - If states are mutually exclusive, use an enum: `.idle`, `.connecting`, `.connected`, `.ended`
 - If values must update together, group them in the enum payload or a small state struct
 - Avoid lifecycle pairs like `isConnected` + `isEnded`; prefer `connectionState`
-- Avoid activity flag piles like `isThinking`, `isSpeaking`, `isToolCalling`; prefer one `activity`
+- Avoid activity flag piles like `isBuffering`, `isPlaying`, `isSeeking`; prefer one `activity`
 - Computed booleans such as `connectionState.isConnected` are fine when they are aliases for a real state, not independent storage
 - Store a `Task` only when the owner must cancel, replace, or coalesce it later
 - Fire-and-forget async work should usually be a local `Task` or `Task.detached`, not another stored optional property
@@ -147,7 +147,7 @@ See: [references/function-design.md](references/function-design.md)
 | Problem | Unclear | Clear |
 |---------|---------|-------|
 | **Connection lifecycle** | `isConnected`, `isEnded`, `isReconnecting` | `enum ConnectionState { case disconnected, connecting, connected, reconnecting, ended }` |
-| **Mutually exclusive activity** | `isThinking`, `isSpeaking`, `isToolCalling`, `isPlayingAudio` | `enum AssistantActivity { case idle, thinking, speaking, usingTool, playingAudio }` |
+| **Mutually exclusive activity** | `isBuffering`, `isPlaying`, `isPaused`, `isSeeking` | `enum PlaybackActivity { case idle, buffering, playing, paused, seeking }` |
 | **Optional-as-state** | `currentRequest: Request?`, `isLoading: Bool`, `error: Error?` | `enum LoadState { case idle, loading(Request), failed(Error), loaded(Result) }` |
 | **Saved one-shot task** | `var refreshTask: Task<Void, Never>?` that is never cancelled | Create the task where the async work starts and let it finish |
 | **Replaceable task** | Multiple optional task properties cancelled in bulk | Keep only tasks that must be cancelled/replaced, or wrap them in a named lifecycle state |
@@ -157,7 +157,7 @@ See: [references/function-design.md](references/function-design.md)
 ```swift
 @Observable final class AppStore {
   private(set) var connectionState: ConnectionState = .disconnected
-  private(set) var assistantActivity: AssistantActivity = .idle
+  private(set) var playbackActivity: PlaybackActivity = .idle
   var configuration = AppConfiguration()
 
   var isConnected: Bool { connectionState == .connected }
@@ -171,7 +171,7 @@ See: [references/function-design.md](references/function-design.md)
 ```
 
 The important part is not the exact names. The important part is that `connectionState`,
-`assistantActivity`, and `configuration` each have one owner and each represent one coherent
+`playbackActivity`, and `configuration` each have one owner and each represent one coherent
 piece of state. Do not spread the same lifecycle across independent `@State`, `@Binding`,
 `@Published`, or optional properties.
 
@@ -433,7 +433,7 @@ See: [references/formatting-consistency.md](references/formatting-consistency.md
 
 | Problem | Unclear / unsafe | Clear |
 |---------|------------------|-------|
-| **Renderer reaches into Node** | `import { readFile } from 'fs'` inside a `.tsx` | `await window.appAPI.readDocument(id)` → main does the I/O |
+| **Renderer reaches into Node** | `import { readFile } from 'fs/promises'` inside a `.tsx` | `await window.appAPI.readDocument(id)` → main does the I/O |
 | **Stringly-typed IPC** | `ipcRenderer.invoke('docments:get', id)` (typo ships) | `IPC_CHANNELS.documents.GET` from a shared `as const`; typed client proxy |
 | **Untyped bridge** | `contextBridge.exposeInMainWorld('api', { invoke })` returning `any` | expose a typed `interface AppAPI` with concrete `Promise<T>` methods |
 | **Logic stuck in main** | business rules written inline in an IPC handler | rule lives in `packages/core`; the handler just calls it |
@@ -441,6 +441,36 @@ See: [references/formatting-consistency.md](references/formatting-consistency.md
 | **nodeIntegration on** | renderer has full Node for "convenience" | `contextIsolation: true`, `nodeIntegration: false`, preload allowlist |
 
 See: [references/typescript-and-electron.md](references/typescript-and-electron.md) (Electron section)
+
+---
+
+### 13. Dependencies and Seams: One Real Implementation, Few Seams, Mock Less
+
+**Core concept:** Each behavior should have exactly **one canonical implementation**, called everywhere it is needed — not re-implemented inline at each call site. Introduce an abstraction seam (a Swift `protocol` or overridable subclass; a TypeScript `interface`) **only where behavior genuinely varies** — a real second implementation, or a real test substitute — and design that seam deliberately: named, minimal, with a real implementation and a real in-memory fake. Keep dependency injection limited to those real seams, and test against real implementations or shared fakes rather than mock frameworks.
+
+**Why it works:** The same behavior copied across a dozen call sites drifts: a fix lands in three copies and the other nine keep the bug, and the reader can't tell which copy is authoritative. At the other extreme, threading every collaborator through initializers "for testability," exposing dependencies as anonymous closures, and asserting on mock call-transcripts all add wiring noise and couple tests to *how* the code works instead of *what* it does — so the tests pass while the system is broken and break while it is fine. One named implementation behind one well-chosen seam keeps both the production call sites and the tests honest and legible.
+
+**Key insights:**
+- **One behavior, one implementation.** If you find yourself writing the same parsing/formatting/validation inline at the third call site, extract a named function or type and call it everywhere. Duplicated ad-hoc implementations are a latent bug farm.
+- **A seam earns its place only when behavior genuinely varies** — there is a real alternative implementation, or a real in-memory substitute used in tests. Do not add a protocol + injection for something that has exactly one implementation forever and no fake.
+- **Swift: design seams as protocols (or an overridable subclass), not stored closure/block properties.** `protocol DocumentStore` with `RemoteDocumentStore` and `InMemoryDocumentStore` reads as a contract, surfaces in the type system, and is reusable across many tests. A constructor taking `onFetch: () async throws -> [Document]` closures hides the contract, resists reuse, and scatters behavior.
+- **Closures are right for one-off callbacks and small strategy parameters** — not as a substitute for a named dependency contract that several call sites and tests share.
+- **Prefer real implementations and in-memory fakes over mock frameworks.** A fake is real code with real behavior, written once and reused; a mock asserts on interactions and pins the test to the implementation. Mock servers are not an acceptance substitute — exercise real fixtures/staging at the boundary.
+- **Inject only what varies.** If there is one implementation forever, a direct reference is clearer than protocol + DI ceremony. Construct stable internals directly; inject the one or two seams that actually have substitutes.
+- **Test through the public API, asserting outcomes, not call sequences.** A test that can only pass against a mock is testing the mock.
+
+**Code applications:**
+
+| Problem | Avoid | Prefer |
+|---------|-------|--------|
+| **Duplicated inline impl** | date formatting re-written at 12 call sites | one `formatRelative(_:)` / `DateFormatting` used everywhere |
+| **Closure seam (Swift)** | `init(onFetch: () async throws -> [Item])` | `protocol ItemStore` + `RemoteItemStore` / `InMemoryItemStore` |
+| **Over-injection** | every collaborator threaded through `init` "for testability" | inject the 1–2 real seams; build stable internals directly |
+| **Mock-heavy test** | `verify(mock.fetch).calledOnce()` asserting interactions | assert the outcome against an in-memory fake |
+| **Speculative seam** | `protocol` with one implementation and no fake | use the concrete type directly until a second implementation exists |
+| **Mock server as acceptance** | a stubbed HTTP server standing in for the real API | real fixtures against staging at the boundary |
+
+See: [references/testing-and-seams.md](references/testing-and-seams.md)
 
 ---
 
@@ -469,6 +499,11 @@ See: [references/typescript-and-electron.md](references/typescript-and-electron.
 | **`unknown` catch misuse** | `catch (e) { e.message }` assuming `e` is an `Error` | `e instanceof Error ? e.message : 'Unknown error'` |
 | **Renderer touches Node** | `import 'fs'` or a token in a `.tsx` renderer file | Go through the typed preload bridge; do Node work in main |
 | **Stringly-typed IPC** | `ipcRenderer.invoke('typo:channel')` | Shared `as const` channel map + typed client; typos fail to compile |
+| **Duplicated implementation** | the same logic re-written inline at a dozen call sites | One named implementation, referenced everywhere |
+| **Closure-injected deps (Swift)** | dependencies passed as `onFetch:`/`onSave:` blocks | A named `protocol` seam with real + in-memory implementations |
+| **Over-injection** | every collaborator threaded through `init` for "testability" | Inject only the seams that vary; build stable internals directly |
+| **Speculative seam** | `protocol` with one impl and no fake | Use the concrete type until a real second impl/fake exists |
+| **Mock-heavy tests** | asserting on mock call transcripts | Assert outcomes against a real implementation or in-memory fake |
 
 ---
 
@@ -492,6 +527,10 @@ See: [references/typescript-and-electron.md](references/typescript-and-electron.
 | Is every meaningful literal a named, top-of-file constant at the narrowest scope? | Magic numbers/strings inline, or constants leaked via `export` | Hoist + name; `as const` for fixed maps; drop needless `export` |
 | Is mechanical style owned by a formatter run in CI? | Quotes/semicolons/wrapping vary; style churns diffs | Adopt Prettier; format on save and gate in CI |
 | In Electron, does the renderer stay free of Node, secrets, and raw IPC? | Renderer imports `fs`/tokens or calls stringly-typed IPC | Route through one typed `contextBridge` allowlist; Node work in main |
+| Is each behavior implemented once and referenced, not re-implemented per call site? | Same logic duplicated across many sites | Extract one named implementation; call it everywhere |
+| Does every abstraction seam have a real second implementation or a real fake? | A protocol/interface with one impl and no substitute | Drop the seam; use the concrete type until variation is real |
+| Are Swift dependency seams protocols/subclasses rather than injected closures, and is DI limited to what varies? | Closure-bag dependencies or everything injected | Named `protocol` seams; inject only the seams with substitutes |
+| Do tests assert outcomes against real/fake implementations rather than mock transcripts? | Tests verify mock call sequences | In-memory fakes + outcome assertions; real fixtures at the boundary |
 | Does the proposed refactor still read like the surrounding repository? | Change is clearer in isolation but less native in context | Re-align naming, file organization, and control-flow with the local house style |
 
 ---
@@ -532,6 +571,7 @@ This keeps the advice concrete and makes the tradeoff between universal clarity 
 - [file-organization.md](references/file-organization.md): One object per file, file naming, folder/barrel structure, and module-level named constants
 - [formatting-consistency.md](references/formatting-consistency.md): The Prettier pattern — deferring mechanical style to a formatter, config, and CI enforcement
 - [typescript-and-electron.md](references/typescript-and-electron.md): TypeScript naming/types/discriminated unions/error handling and the Electron main/preload/renderer boundary with typed IPC
+- [testing-and-seams.md](references/testing-and-seams.md): One canonical implementation, protocol/subclass seams over injected closures, minimal dependency injection, and fakes-over-mocks testing
 
 ---
 

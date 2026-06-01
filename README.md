@@ -1,6 +1,6 @@
 # Code Clarity
 
-A Claude Code skill for writing readable, intention-revealing code — precise naming, consistent abstraction levels, one-object-per-file organization, hoisted named constants, formatter-deferred mechanical consistency, repository-aware conventions, and the early-return pattern. **Swift, TypeScript, and Electron first-class**, with Go and Python equivalents throughout.
+A Claude Code skill for writing readable, intention-revealing code — precise naming, consistent abstraction levels, one-object-per-file organization, hoisted named constants, formatter-deferred mechanical consistency, repository-aware conventions, the early-return pattern, and testable seam design (one canonical implementation, protocol seams over closures, minimal DI, fakes over mocks). **Swift, TypeScript, and Electron first-class**, with Go and Python equivalents throughout.
 
 ## What This Covers
 
@@ -18,6 +18,7 @@ A Claude Code skill for writing readable, intention-revealing code — precise n
 | **Named Constants** | Hoisting and scoping fixed values — Swift `fileprivate let`, TS module-top `const` and `as const` |
 | **Formatting Consistency** | The Prettier pattern — deferring mechanical style to a formatter, config, and CI gate |
 | **Electron Boundaries** | Main / preload / renderer separation and one typed, allowlisted IPC bridge |
+| **Dependencies & Test Seams** | One canonical implementation, protocol/subclass seams over closures, minimal DI, fakes over mocks |
 
 ## Install
 
@@ -37,6 +38,8 @@ Once installed, the skill activates when you ask Claude to:
 - Hoist magic numbers and strings into named, correctly-scoped constants
 - Set up formatter-based mechanical consistency (Prettier + CI gate)
 - Review an Electron app's main/preload/renderer boundary and typed IPC surface
+- Replace closure-injected dependencies with protocol/subclass seams in Swift
+- Reduce over-injection and mock-heavy tests; design real fakes and one canonical implementation
 - Review a change for clarity while preserving the repository's existing style
 - Design a new type with appropriate struct/class choice, or a TS discriminated union
 
@@ -72,7 +75,7 @@ When the skill is working well, it should:
 
 ```
 code-clarity/
-├── SKILL.md                        # Main skill — 12 principles, scoring, quick diagnostics
+├── SKILL.md                        # Main skill — 13 principles, scoring, quick diagnostics
 ├── agents/
 │   └── openai.yaml                 # UI metadata for skill lists and chips
 └── references/
@@ -84,7 +87,8 @@ code-clarity/
     ├── class-struct-design.md      # SRP, struct vs class, coupling and cohesion
     ├── file-organization.md        # One object per file, file naming, barrels, named constants
     ├── formatting-consistency.md   # The Prettier pattern — formatter-owned mechanical style
-    └── typescript-and-electron.md  # TS naming/types/errors + Electron main/preload/renderer + typed IPC
+    ├── typescript-and-electron.md  # TS naming/types/errors + Electron main/preload/renderer + typed IPC
+    └── testing-and-seams.md        # One implementation, protocol seams over closures, minimal DI, fakes over mocks
 ```
 
 ## Design Philosophy
@@ -96,6 +100,7 @@ This skill is shaped by complementary perspectives:
 - **TypeScript's structural typing** — discriminated unions over boolean piles, `as const` registries, schemas at the boundary
 - **Electron's trust model** — three processes, one typed allowlisted bridge, no Node in the renderer
 - **Prettier's stance** — encode mechanical style once, enforce it in CI, stop debating it
+- **Test-driven design pressure** — one canonical implementation, protocol/subclass seams over injected closures, minimal DI, and fakes over mocks
 - **Repository-local clarity** — clarity is partly local, so preserve the codebase's existing vocabulary and file patterns before introducing a new one
 
 The underlying principle is language-agnostic: **code is written once but read many times**. Every name, file boundary, constant, and structural decision is a communication decision.
