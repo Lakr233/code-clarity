@@ -1,6 +1,6 @@
 # Code Clarity
 
-A Claude Code skill for writing readable, intention-revealing code — precise naming, consistent abstraction levels, one-object-per-file organization, hoisted named constants, formatter-deferred mechanical consistency, repository-aware conventions, the early-return pattern, and testable seam design (one canonical implementation, protocol seams over closures, minimal DI, fakes over mocks). **Swift, TypeScript, and Electron first-class**, with Go and Python equivalents throughout.
+A Claude Code skill for writing readable, intention-revealing code with precise names, flat control flow, consistent abstraction levels, focused files, named constants, formatter-aligned style, repository conventions, and testable seams. **Swift, TypeScript, Electron, Go, and Python examples** are included throughout.
 
 ## What This Covers
 

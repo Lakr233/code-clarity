@@ -1,6 +1,6 @@
 interface:
   display_name: "Code Clarity"
-  short_description: "Readable code: naming, flow, file organization, constants, formatting — Swift/TypeScript/Electron"
+  short_description: "Readable code: naming, flow, focused files, constants, formatting, and testable seams"
   default_prompt: "Use $code-clarity to review this code for clarity while preserving the repository's local style."
 
 policy:
