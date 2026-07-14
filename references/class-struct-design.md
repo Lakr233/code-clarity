@@ -1,20 +1,20 @@
 # Class and Struct Design
 
-Classes and structs are the primary unit of organization in object-oriented and protocol-oriented code. A well-designed type has a clear, single responsibility, a specific name that reflects that responsibility, and appropriate coupling to the rest of the system. A poorly designed type accumulates responsibilities over time, resists change, and becomes hard to test and understand.
+Classes and structs are primary units of ownership. A well-designed type has a coherent responsibility, a name that reflects what it owns, and an interface smaller than the implementation it hides. A poorly designed type either accumulates unrelated responsibilities or is split into shallow wrappers that expose rather than contain complexity.
 
 ---
 
-## The Single Responsibility Principle
+## Coherent Ownership
 
-**A type should have one reason to change.** If you can describe two different scenarios that would cause you to modify the same class — and those scenarios come from different concerns — the class has too many responsibilities.
+**A type should own one coherent body of knowledge or lifecycle.** It can contain several steps and methods when keeping them together hides decisions from callers. Split when parts have independent owners, invariants, consumers, or reasons to change—not merely because a description contains “and.”
 
-The practical test: describe the type's job in one sentence, without using "and":
+The practical test: can callers understand the type through a small, stable interface without knowing its internal sequence?
 
 - ✅ `TokenRefresher` — "Refreshes expired authentication tokens"
 - ✅ `RequestThrottler` — "Throttles outgoing requests to stay within API rate limits"
 - ❌ `UserManager` — "Manages user authentication, profile updates, session state, and avatar uploads"
 
-The last example has four reasons to change. Split it.
+The last example lists unrelated policy areas and is a likely split. A coordinator that owns one workflow may legitimately call several collaborators; do not replace it with a chain of one-method forwarding types.
 
 ---
 
@@ -26,8 +26,8 @@ The name is the first contract a type makes with the reader. Names that feel unc
 
 | Name pattern | Signal | Fix |
 |-------------|--------|-----|
-| `XxxManager` | Accumulated responsibilities | Identify each distinct job and name it: `SessionStore`, `ProfileEditor` |
-| `XxxHelper` | Unclear what it helps with | Name the domain: `DateRangeFormatter`, `PriceCalculator` |
+| `XxxManager` | Ownership may be unclear | Keep for an established lifecycle coordinator; otherwise name the owned role |
+| `XxxHelper` | Operation or subject may be unclear | Name the operation or subject when possible |
 | `XxxUtil` / `XxxUtils` | Bag of unrelated functions | Group by domain: `StringEncoding`, `ImageProcessing` |
 | `XxxService` (too broad) | Acceptable but often too vague | Be specific: `AuthenticationService` vs just `UserService` |
 | `XxxController` (outside MVC) | Fine in UIKit MVC, vague elsewhere | `CheckoutCoordinator`, `FormValidator` |
@@ -140,9 +140,10 @@ class CheckoutViewController: UIViewController {
 ```
 
 Reduce coupling by:
-- Introducing a ViewModel or Coordinator that aggregates dependencies
-- Depending on protocols rather than concrete types
-- Passing only the data a type needs, not the service it comes from
+- passing only the values or capabilities the type actually needs;
+- keeping a concrete dependency when behavior does not vary;
+- introducing a small consumer-owned protocol when a real substitute exists;
+- grouping coordination only when it hides a stable workflow from callers.
 
 ### High Cohesion
 
@@ -206,7 +207,7 @@ class PasswordResetService { }      // changes when password reset UX changes
 
 ## Protocol-Oriented Design in Swift
 
-Protocols define capability contracts. Used well, they reduce coupling, improve testability, and make the type's intentions explicit.
+Protocols define capability contracts. Use one when a consumer needs a stable subset of behavior with real substitutes. A protocol is not automatically clearer than a concrete type; every requirement expands all conformers and fakes.
 
 ```swift
 // Protocol defines what this type needs from the outside world
@@ -215,7 +216,7 @@ protocol OrderRepository {
     func save(_ order: Order) async throws
 }
 
-// The concrete type is an implementation detail
+// Real substitutes justify the capability boundary
 class RemoteOrderRepository: OrderRepository { ... }
 class InMemoryOrderRepository: OrderRepository { }  // for tests
 
@@ -229,7 +230,7 @@ class CheckoutViewModel {
 }
 ```
 
-This is also the pattern that makes testing natural — inject `InMemoryOrderRepository` in tests without hitting the network.
+This pattern makes testing natural because the alternate implementation has coherent behavior. For one local operation, a closure may be smaller; with no variation, use the concrete type.
 
 ---
 
@@ -237,11 +238,11 @@ This is also the pattern that makes testing natural — inject `InMemoryOrderRep
 
 | Question | Pass | Fail |
 |----------|------|------|
-| Can you name the type's responsibility in one sentence without "and"? | Yes | "It manages X and also handles Y" |
-| Is the name specific and free of Manager/Helper/Util? | Yes | `UserManager`, `NetworkHelper` |
+| Does the type own one coherent body of knowledge or lifecycle? | Yes | Unrelated invariants and consumers accumulate together |
+| Does the name reveal that ownership in repository vocabulary? | Yes | The name forces readers to inspect implementation |
 | Does the type use `struct` for values and `class` for identities? | Yes | Classes used for pure data containers |
 | Do all methods use properties of the type? | Yes | Methods that don't touch `self` (free functions belong elsewhere) |
-| Does the type have ≤ 3–4 dependencies? | Yes | More than 5 injected services |
-| If you split the type in half, would neither half be missing something essential? | No, it belongs together | Yes, it can split cleanly — it probably should |
+| Does each dependency represent data or behavior the type genuinely needs? | Yes | Dependencies exist only for wiring or tests |
+| Would a split create deeper modules rather than pass-through wrappers? | Yes | The split only adds forwarding files and call hops |
 | Is the type easy to test without setting up unrelated state? | Yes | Complex setup required for simple tests |
 | Has the type grown by accumulation rather than design? | No | Each new "related feature" landed here |

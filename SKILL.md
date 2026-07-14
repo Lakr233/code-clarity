@@ -1,583 +1,173 @@
 ---
 name: code-clarity
-description: 'Write readable, intention-revealing code with precise names, flat control flow, consistent abstraction levels, focused files, named constants, formatter-aligned style, repository conventions, and testable seams. Use when naming feels off, logic is hard to follow, functions do too much, nested conditionals obscure flow, files mix many exports, magic numbers are inline, formatting is inconsistent, logic is reimplemented at call sites, tests overuse mocks or dependency injection, or a refactor should preserve local style. Covers Swift, TypeScript, Electron, Go, and Python examples.'
-license: MIT
-metadata:
-  author: qaq
-  version: "1.3.0"
+description: Write, review, and simplify Go, Swift, and TypeScript code so behavior has one owner, state is minimal and derivable, failures are grouped by real recovery behavior, APIs expose only necessary concepts, control flow stays flat, and tests protect observable outcomes without forcing production abstractions. Use when code grows through incremental feedback, a diff adds many states/errors/branches/types, naming or flow is hard to follow, seams and mocks multiply, or a refactor should reduce concepts while preserving behavior and repository conventions.
 ---
 
-# Code Clarity Framework
+# Code Clarity
 
-A practical framework for writing code that communicates intent clearly. The central thesis: **a developer reads code far more than they write it**, so every naming and structural decision is a communication decision. Code that requires a reader to reconstruct the author's mental model has failed at its primary job.
+Optimize for the amount of code and state a maintainer must understand, not for the apparent completeness of each local branch.
 
-This framework focuses on the micro-level of software design — the decisions made at the function, method, class, and file level — and complements macro-level architecture thinking.
+## Working method
 
-**Languages covered.** The framework is language-agnostic in principle, with first-class guidance for **Swift**, **TypeScript**, and **Electron** (the main/preload/renderer split), plus Go and Python equivalents where they sharpen a point. Swift examples carry the value-vs-identity and `guard` material; TypeScript and Electron examples carry the one-object-per-file, module-constant, discriminated-union, typed-IPC, and formatter-consistency material drawn from real production codebases.
+### 1. Establish the real contract
 
-## Core Principles
+Read the repository instructions and representative surrounding code before editing. State:
 
-**Code is written once but read hundreds of times.** Every name, every function boundary, every conditional structure is a message to the next reader (usually yourself, six months later). Clarity is not a style preference — it is a correctness property: unclear code is one misunderstanding away from a bug.
+- the invariant that must remain true;
+- the normal successful path;
+- the failures that require different recovery behavior;
+- the facts that are already authoritative;
+- the requested scope and explicit non-goals.
 
-**Clarity is partly local to a repository.** A refactor that ignores a codebase's existing naming, file organization, and control-flow habits can make the result less readable even when the individual function improves in isolation.
+Do not begin from the line mentioned in feedback. Begin from the abstraction that owns the behavior. A local complaint often reveals that the owner or invariant is wrong.
 
-## Scoring
+### 2. Inventory every proposed concept
 
-**Goal: 10/10.** When reviewing or writing code, rate it 0–10 on clarity. A 10/10 has names that read like prose, functions that do exactly one thing at one level of abstraction, guard clauses that eliminate nesting, structures whose responsibilities are obvious from their name alone, and changes that match the repository's established local conventions. Provide the current score and exactly what to change to reach 10/10.
+Count concepts, not only lines. Treat each of these as a cost that needs a reason:
 
-## The Code Clarity Framework
+- stored property, serialized field, cache entry, or duplicated value;
+- enum/union case, status, phase, flag, or optional used as state;
+- sentinel, typed error, error code, or result variant;
+- public method, protocol requirement, callback, interface, or wrapper;
+- branch, retry path, rollback path, compatibility path, or special case;
+- type, class, actor, manager, helper, or result object;
+- test seam, fake method, fixture variant, or duplicated test matrix row.
 
-Thirteen principles for writing code that communicates clearly. Principles 1–8 are structural and language-agnostic; principles 9–12 cover file organization, named constants, mechanical formatting consistency, and the Electron process boundary — the areas most often neglected in TypeScript and Electron codebases; principle 13 covers dependencies and seam design — one canonical implementation, seams only where behavior truly varies, and testing without drowning in mocks and dependency injection:
+For each concept ask:
 
----
+1. Can it be derived from existing authoritative facts?
+2. Does a caller behave differently because it exists?
+3. Can it be private to the owner instead of crossing a boundary?
+4. Can it be folded into the normal path or an existing type?
+5. Would deleting it make a real supported scenario ambiguous or unsafe?
 
-### 1. Naming: Names Are Your Primary API
+If the last answer is no, delete or avoid the concept.
 
-**Core concept:** Every name — variable, function, method, class, parameter — is a contract with the reader. Names should reveal intent, not implementation. The reader should never need to read a function's body to understand what it does or what a variable contains.
+### 3. Collapse failures by recovery behavior
 
-**Why it works:** In most codebases, 70%+ of identifiers are custom names. If those names are precise, the code reads like a domain description. If they are vague or misleading, every reader carries extra cognitive load reconstructing what the author meant.
+Build failure equivalence classes before inventing error types. If several failures produce the same return value, fallback, or caller action, handle them through one path. Preserve a distinct error only when a caller must choose different behavior.
 
-**Key insights:**
-- Functions that *do something* use verbs: `fetchUser()`, `validateInput()`, `syncViews()`
-- Functions that *return a value* describe what they return: `activeUsers()`, `formattedDate()`, `bytesReceived()`
-- Booleans use `is/has/can/should`: `isVisible`, `hasChildren`, `canSubmit`, `shouldRetry`
-- Avoid double negatives: `hasElements` not `!isEmpty`, `isEnabled` not `!isDisabled`
-- Class methods drop redundant type context: `line.length()` not `line.getLineLength()`
-- Names should be proportional to scope: loop variables can be `i`, module-level state needs full names
-- Abbreviations are only valid if universally understood in the domain (`url`, `id`, `dto`)
+Do not turn diagnostic detail into control state. Log the underlying error while keeping the control model small.
 
-**Code applications:**
+### 4. Choose the smallest honest representation
 
-| Context | Unclear | Clear |
-|---------|---------|-------|
-| **Action function** | `handle()`, `process()`, `manage()` | `submitOrder()`, `parseResponse()`, `invalidateCache()` |
-| **Return-value function** | `get()`, `fetch()`, `data()` | `currentUser()`, `pendingRequests()`, `errorMessage()` |
-| **Boolean** | `flag`, `check`, `status`, `valid` | `isAuthenticated`, `hasUnreadMessages`, `canRetry` |
-| **Swift bool** | `!list.isEmpty` | `list.hasElements` (extension) |
-| **TS bool** | `if (!user.disabled)` | `if (user.isEnabled)` |
-| **Class name** | `Manager`, `Handler`, `Helper`, `Util` | `RequestThrottler`, `TokenRefresher`, `PayloadEncoder` |
-| **TS type suffix** | `data`, `info`, `thing` | role suffixes: `*Service`, `*Store`, `*Schema`, `*Registry`, `*Queue` |
-| **Parameter** | `func send(_ data: Data, _ b: Bool)` | `func send(_ payload: Data, encrypted: Bool)` |
-| **TS interface** | prefix every interface with `I` reflexively | name the role: `Session`, `HandlerDeps`; reserve `I`-prefix for abstract contracts (`ISessionManager`) only if the repo already does |
+- Derive values instead of storing duplicates.
+- Use a boolean for one independent yes/no fact.
+- Use an enum or discriminated union for mutually exclusive states with exhaustive consumers.
+- Use a value type for data and a reference/lifecycle type only when identity or ownership matters.
+- Keep intermediate values and callbacks local; do not promote implementation steps into public state.
+- Store only facts needed after the current computation that cannot be derived safely.
+- Add a machine-readable error code only when another component branches on it.
+- Add a seam only where behavior genuinely varies.
 
-See: [references/naming-conventions.md](references/naming-conventions.md) and [references/typescript-and-electron.md](references/typescript-and-electron.md)
+Closed modeling is not a command to create an enum for every finite set. The type must remove invalid combinations or enable exhaustive behavior; otherwise it is ceremony.
 
----
+### 5. Implement one path with one owner
 
-### 2. Early Return: Flatten the Happy Path
+Prefer one parameterized or composable implementation over parallel mode-specific implementations when the mechanics are the same. Put decisions in the calling layer and mechanics in the function or type that owns them.
 
-**Core concept:** Handle preconditions, error cases, and guard conditions at the top of a function and return immediately. The main logic of a function should be at the lowest indentation level, unobstructed by nested conditionals.
+Keep the source of truth with its owner: interpret, validate, and derive a value where its inputs are owned, then expose the smallest result callers need. Do not export raw fields so each caller can reconstruct the same predicate, classification, or calculation independently. “Produce and consume together” means one ownership boundary and one canonical derivation, not necessarily one physical file; callers may pass along or display the result, but must not redefine it.
 
-**Why it works:** Nesting forces the reader to maintain a mental stack of conditions. Each level of indentation multiplies the cognitive load. Early returns collapse this stack: by the time the reader reaches the main logic, all edge cases have been disposed of and forgotten. This is idiomatic in both Go and Swift.
+Keep the happy path flat. Extract a function when it names a coherent operation or hides a lower abstraction level—not merely to reduce line count. Avoid pass-through methods whose only effect is to enlarge an interface.
 
-**Key insights:**
-- Check preconditions first, return/throw immediately if they fail
-- The "happy path" — the normal case — lives at the leftmost indentation level
-- `guard` in Swift and early `if err != nil { return }` in Go are the same philosophy
-- Each early return is a complete thought: "this condition means we're done here"
-- Avoid `else` after a `return` — it is always redundant and adds visual noise
-- Deeply nested `if/else` is a signal to invert and exit early
-- Exception: don't force early return when the two branches are genuinely symmetric in importance
+Apply the language's own grain:
 
-**Code applications:**
+- **Go:** Return concrete types and define small interfaces at the consumer. Create a sentinel or typed error only when callers use `errors.Is`/`errors.As` to choose different behavior; wrapping an error makes it API. Keep `context.Context` explicit and first. Handle errors before the normal path and avoid result structs that only rename a short, unambiguous return tuple.
+- **Swift:** Use structs for values and classes/actors for identity, resource ownership, or isolated mutation. Use an enum when cases are mutually exclusive and switched exhaustively; keep an independent binary fact as a boolean. Treat every `await` inside an actor as a point where assumptions may need revalidation. Use a protocol for a shared capability with real substitutes, a closure for one local operation that genuinely varies, and a concrete dependency when nothing varies.
+- **TypeScript:** Use a discriminated union only for variants consumers handle differently, and use `never` for exhaustive switches. Derive secondary values from one typed source instead of mirroring flags. Narrow or validate `unknown` input once at the boundary; do not repeatedly validate internal typed values. Use `satisfies` for complete mappings without widening useful inference.
 
-| Context | Nested (avoid) | Early Return (prefer) |
-|---------|---------------|----------------------|
-| **Swift guard** | `if let user = user { if user.isActive { ... } }` | `guard let user, user.isActive else { return }` |
-| **Validation** | `if isValid { if hasPermission { doWork() } }` | `guard isValid else { return }; guard hasPermission else { return }; doWork()` |
-| **Error handling** | `if error == nil { if result != nil { use(result!) } }` | `guard error == nil, let result else { handle(error); return }; use(result)` |
-| **Go style** | `if err == nil { if data != nil { process(data) } }` | `if err != nil { return err }; if data == nil { return ErrEmpty }; process(data)` |
-| **TS guard** | `if (input) { if (input.type === 'keyDown') { ... } }` | `if (!input \|\| input.type !== 'keyDown') return; ...` |
-| **TS dependency guard** | wrap a whole handler body in `if (windowManager) { ... }` | `if (!windowManager) return; ...` at the top — keeps the body flat |
+For naming, control flow, functions, files, and local style, load only the relevant existing references:
 
-See: [references/early-return.md](references/early-return.md)
+- [references/naming-conventions.md](references/naming-conventions.md)
+- [references/early-return.md](references/early-return.md)
+- [references/function-design.md](references/function-design.md)
+- [references/abstraction-levels.md](references/abstraction-levels.md)
+- [references/class-struct-design.md](references/class-struct-design.md)
+- [references/file-organization.md](references/file-organization.md)
+- [references/formatting-consistency.md](references/formatting-consistency.md)
+- [references/repository-conventions.md](references/repository-conventions.md)
+- [references/testing-and-seams.md](references/testing-and-seams.md)
 
----
+### 6. Test behavior classes, not implementation inventory
 
-### 3. Function Design: One Thing, One Level
+Protect each externally distinct outcome and each dangerous arithmetic/resource boundary. Do not create one test per private branch when multiple branches intentionally converge on the same fallback.
 
-**Core concept:** A function should do exactly one thing, at exactly one level of abstraction. The name should make that one thing obvious. If you need "and" to describe what a function does, it is doing two things.
+Prefer:
 
-**Why it works:** Functions that mix abstraction levels force the reader to context-switch between strategy and implementation detail. A function that orchestrates a workflow should not also contain the bit-manipulation logic that implements one step. Keeping levels consistent lets the reader choose the depth they need.
+- a small unit test for pure policy;
+- a test at the real abstraction boundary;
+- a regression test for an observed failure;
+- a compatibility test only when multiple input or API versions are intentionally supported.
 
-**Key insights:**
-- The "one level of abstraction per function" rule: orchestration and implementation should not coexist
-- If a function's body requires a comment to explain a section, that section is probably a function
-- Function length is a symptom, not a cause: a 50-line function doing one thing is fine; a 5-line function doing three things is not
-- Parameters: 0–2 is good, 3 is a warning, 4+ usually means a struct/object is needed
-- Avoid output parameters — return values instead
-- Avoid boolean flags that change the function's behavior — split into two functions
-- Side effects should be in the name: `saveUser()` not `getUser()` when it also persists
-
-**Code applications:**
-
-| Problem | Example | Fix |
-|---------|---------|-----|
-| **Mixed levels** | `submitForm()` validates, serializes, and also builds the HTTP multipart boundary | Extract `buildMultipartBody()` |
-| **Boolean flag param** | `render(view, animated: Bool)` does two different things | Split into `render(view)` and `renderAnimated(view)` |
-| **Too many params** | `createUser(name:email:age:role:team:avatar:)` | Accept `UserConfiguration` struct |
-| **Hidden side effect** | `currentUser()` hits the network | Rename `fetchCurrentUser()` or make it async |
-| **"And" function** | `validateAndSave()` | Two functions: `validate()`, `save()` |
-
-See: [references/function-design.md](references/function-design.md)
-
----
-
-### 4. State Modeling: Related Flags Are a Hidden State Machine
-
-**Core concept:** When several booleans, optionals, or task properties describe the same lifecycle, they are usually a state machine written in the least clear form. Make the lifecycle explicit with an enum or a small value type so impossible combinations cannot be represented.
-
-**Why it works:** Scattered flags force every caller to keep them synchronized. A reader has to ask whether `isConnected`, `isEnded`, `isBuffering`, `isPlaying`, `activeTask`, and `pendingTask` can overlap, and bugs appear when one branch updates three of them but forgets the fourth. A single state value makes the valid states visible and gives each transition one place to live.
-
-**Key insights:**
-- If states are mutually exclusive, use an enum: `.idle`, `.connecting`, `.connected`, `.ended`
-- If values must update together, group them in the enum payload or a small state struct
-- Avoid lifecycle pairs like `isConnected` + `isEnded`; prefer `connectionState`
-- Avoid activity flag piles like `isBuffering`, `isPlaying`, `isSeeking`; prefer one `activity`
-- Computed booleans such as `connectionState.isConnected` are fine when they are aliases for a real state, not independent storage
-- Store a `Task` only when the owner must cancel, replace, or coalesce it later
-- Fire-and-forget async work should usually be a local `Task` or `Task.detached`, not another stored optional property
-- Do not use optional as a vague state marker when an enum case can name the state directly
-- In SwiftUI apps, prefer one observable app/store object passed through the view tree over many tiny dependency-injection seams
-- Put UI-facing snapshots in small context/configuration value types when several settings must be applied together
-- Views should read state and send intent; lifecycle transitions belong in the store/controller that owns the state
-
-**Code applications:**
-
-| Problem | Unclear | Clear |
-|---------|---------|-------|
-| **Connection lifecycle** | `isConnected`, `isEnded`, `isReconnecting` | `enum ConnectionState { case disconnected, connecting, connected, reconnecting, ended }` |
-| **Mutually exclusive activity** | `isBuffering`, `isPlaying`, `isPaused`, `isSeeking` | `enum PlaybackActivity { case idle, buffering, playing, paused, seeking }` |
-| **Optional-as-state** | `currentRequest: Request?`, `isLoading: Bool`, `error: Error?` | `enum LoadState { case idle, loading(Request), failed(Error), loaded(Result) }` |
-| **Saved one-shot task** | `var refreshTask: Task<Void, Never>?` that is never cancelled | Create the task where the async work starts and let it finish |
-| **Replaceable task** | Multiple optional task properties cancelled in bulk | Keep only tasks that must be cancelled/replaced, or wrap them in a named lifecycle state |
-
-**SwiftUI data-flow check:**
-
-```swift
-@Observable final class AppStore {
-  private(set) var connectionState: ConnectionState = .disconnected
-  private(set) var playbackActivity: PlaybackActivity = .idle
-  var configuration = AppConfiguration()
-
-  var isConnected: Bool { connectionState == .connected }
-
-  func connect() {
-    guard case .disconnected = connectionState else { return }
-    connectionState = .connecting
-    Task { await runConnection() }
-  }
-}
-```
-
-The important part is not the exact names. The important part is that `connectionState`,
-`playbackActivity`, and `configuration` each have one owner and each represent one coherent
-piece of state. Do not spread the same lifecycle across independent `@State`, `@Binding`,
-`@Published`, or optional properties.
-
-**TypeScript: discriminated (tagged) unions are the same idea.** Where Swift uses an `enum` with
-associated values, TypeScript uses a discriminated union with a literal `type`/`kind`/`status`
-discriminant. The payload that only exists in one state lives only in that variant, so impossible
-combinations are unrepresentable and every consumer `switch`es on the tag:
-
-```ts
-// Avoid — three booleans + an optional that must be kept in sync
-interface LoadState { isLoading: boolean; isError: boolean; data?: Result; error?: Error }
-
-// Prefer — one value, each variant carries exactly its own payload
-type LoadState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'loaded'; data: Result }
-  | { status: 'failed'; error: Error }
-```
-
-Real Electron/React codebases push this far: a domain event type or route state becomes one union of
-many tagged variants, with small type-guard helpers (`isLoaded(state)`) instead of scattered
-booleans. Validate the boundary with a schema (zod `z.discriminatedUnion('type', [...])`) so the
-runtime shape and the compile-time type cannot drift. See
-[references/typescript-and-electron.md](references/typescript-and-electron.md).
-
----
-
-### 5. Abstraction Levels: Hierarchy Must Be Consistent
-
-**Core concept:** Every scope — module, class, function — should operate at a single, coherent level of abstraction. High-level code manages strategy and orchestration. Low-level code handles mechanism and detail. Mixing these two in the same scope is one of the most common and most damaging readability failures.
-
-**Why it works:** When a reader encounters a high-level function, they expect to understand the overall flow without knowing implementation details. When they encounter a low-level function, they expect to see a specific, contained operation. Mixing the two forces the reader to maintain both strategic and tactical context simultaneously.
-
-**Key insights:**
-- Abstraction level corresponds to position in the call tree: higher up = more abstract
-- Red flag: a function that calls other named functions AND also does raw data manipulation
-- Red flag: a class that manages business logic AND also formats strings for display
-- Naming reveals level: `orchestrateCheckout()` is high-level; `appendQueryParameter(_:to:)` is low-level
-- The "step-down rule": reading a file top-to-bottom, each function should be followed by the functions it calls at the next level down
-- In Swift: a ViewModel should not contain URL construction logic; a NetworkLayer should not contain business rules
-
-**Code applications:**
-
-| Context | Mixed Levels (avoid) | Consistent Levels (prefer) |
-|---------|---------------------|---------------------------|
-| **Checkout flow** | `checkout()` calls `applyDiscount()` then also does `price * (1 - rate)` math inline | `checkout()` calls `applyDiscount()` which internally computes the math |
-| **ViewModel** | `loadData()` builds URLRequest, parses JSON, and updates `@Published` state | `loadData()` calls `repository.fetchItems()` and maps to display models |
-| **Class responsibilities** | `OrderProcessor` manages order state AND formats the confirmation email HTML | Two classes: `OrderProcessor`, `OrderConfirmationFormatter` |
-| **Swift view** | `body` property contains network calls and business logic | `body` only references `viewModel` properties and calls `viewModel` methods |
-| **React component** | a `.tsx` component opens a WebSocket, parses JSON, and renders | component calls a typed hook/store; transport and parsing live below the component |
-| **Electron renderer** | renderer reaches into Node `fs` / spawns a child process directly | renderer calls `window.electronAPI.x()`; Node-level work lives only in the main process |
-
-See: [references/abstraction-levels.md](references/abstraction-levels.md) and [references/typescript-and-electron.md](references/typescript-and-electron.md)
-
----
-
-### 6. Repository Conventions: Clarity Is Also Local
-
-**Core concept:** Clarity is not purely universal. It is partly local to a codebase. A change is clearer when it extends the naming, file organization, layering, and UI construction patterns that the surrounding repository already uses. A technically sound refactor that ignores established local conventions often makes the codebase harder to read, not easier.
-
-**Why it works:** Readers build fluency from repetition. If one repository consistently uses `Type+Feature.swift`, `is/has/can` booleans, and `guard`-heavy control flow, then a new contribution that follows those patterns is faster to parse than one introducing a different but equally reasonable style. Local consistency compounds readability.
-
-**Key insights:**
-- Start by sampling representative files before prescribing style changes
-- Identify local suffixes and split patterns such as `+Delegate`, `+Layout`, `+DataSource`, or module-specific equivalents
-- Preserve repository vocabulary unless it is actively misleading
-- Prefer extending an existing style system over introducing a parallel one
-- If the codebase already uses a clear exception to generic advice, follow the repository unless the exception is causing real defects
-- Review comments and logs for tone: some codebases are terse and operational, others explanatory and educational
-- Clarity advice should be phrased as: "make this read like the rest of the good code in the repository"
-
-**Code applications:**
-
-| Problem | Generic Advice | Repository-aware Advice |
-|---------|----------------|-------------------------|
-| **File split** | "Put everything in one file to reduce jumping" | Match the local split strategy if the repo already uses `Type+Feature.swift` consistently |
-| **Naming** | "Rename all `Manager` types" | Keep existing role suffixes if the repository uses them with stable meaning |
-| **UI layout** | "Use Auto Layout everywhere" | Preserve a mixed style if the codebase uses constraints for page shells and manual frame layout for high-frequency subviews |
-| **Control flow** | "Use one preferred pattern globally" | Match local `guard`/early-return habits if they already make the module read consistently |
-| **Comments** | "Add more comments" | Match the house style: brief rationale comments in terse codebases, richer guidance in instructional ones |
-
-See: [references/repository-conventions.md](references/repository-conventions.md)
-
----
-
-### 7. Error Boundaries: Handle Failures at the Right Level
-
-**Core concept:** Error handling should communicate intent just as clearly as names do. User-facing
-operations should surface failures. Best-effort background refreshes may fail quietly, but should
-usually leave a trace. Internal invariants should fail loudly in debug instead of being silently
-papered over.
+If every fake gains a no-op method after a production interface change, reconsider the interface before updating the fakes.
 
-**Why it works:** Broad `do/catch` blocks and casual `try?` make different failures look identical.
-The reader cannot tell whether an error is expected, ignorable, user-visible, or a bug. Clear error
-boundaries keep the happy path flat while preserving the information needed to debug production
-behavior.
-
-**Key insights:**
-- Validate preconditions with early returns before entering `do/catch`
-- Keep `do/catch` scoped to the operation that can actually throw
-- Avoid `try?` when the failure changes user-visible state or lifecycle state
-- Use `try?` only for genuinely disposable cleanup, probing, or cache-style best-effort work
-- Background failures should usually trace or log at debug level rather than vanish
-- Use assertions for impossible states in debug, then return safely in release
-- Do not wrap optional binding inside a large `do/catch`; unwrap first, then run the throwing work
-
-**Code applications:**
-
-| Problem | Unclear | Clear |
-|---------|---------|-------|
-| **Validation inside catch** | `do { guard let data else { throw ... }; decode(data) } catch { ... }` | `guard let data else { return error }; do { decode(data) } catch { ... }` |
-| **Silent lifecycle failure** | `try? startCapture()` | `do { try startCapture() } catch { state = .stopped; emit(error) }` |
-| **Best-effort refresh** | `if let event = try? await refresh() { append(event) }` | `do { guard let event = try await refresh() else { return }; append(event) } catch { trace.debug(...) }` |
-| **Impossible optional** | `if let session { try await session.send(...) }` in connected state | `guard let session else { assertionFailure(...); return }` |
+### 7. Run a deletion pass after correctness
 
-**TypeScript error idioms:**
+Reread the complete changed context, not only the edited lines. Then inspect the diff and ask:
 
-| Problem | Unclear | Clear |
-|---------|---------|-------|
-| **`unknown` catch** | `catch (e) { log(e.message) }` (`e` is `unknown`; may not be an `Error`) | `catch (e) { const msg = e instanceof Error ? e.message : 'Unknown error'; log(msg) }` |
-| **Swallowed promise** | `doThing()` (floating promise, rejection vanishes) | `await doThing()` inside a scoped `try/catch`, or `void doThing().catch(reportError)` deliberately |
-| **Expected-failure as throw** | `try { return parse(x) } catch { return null }` for routine validation | return a Result: `{ ok: true; value } \| { ok: false; error }` and `if (!r.ok) return` |
-| **Missing cleanup on throw** | resource left open when the `try` body throws | release in `finally` (`server?.close()`), mirror of Swift `defer` |
+- Which field can now be computed?
+- Which cases share the same response?
+- Which wrapper only forwards a call?
+- Which branch protects an unsupported or unactionable scenario?
+- Which comments narrate code instead of preserving rationale?
+- Which tests assert internal choreography instead of behavior?
+- Which compatibility path has no active consumer?
 
----
+Delete first; rename or document what remains.
 
-### 8. Class and Struct Design: Single Responsibility, Honest Names
+## Decision gates
 
-**Core concept:** A class or struct should have one reason to change. Its name should be specific enough that adding a second responsibility feels obviously wrong. Vague names like `Manager`, `Helper`, and `Util` are a signal that responsibilities have not been thought through.
+### Store state only when all are true
 
-**Why it works:** When a type has a single, clearly-named responsibility, it is easy to test, easy to modify, and easy to understand. When a type accumulates responsibilities over time, every change requires understanding the whole type, and changes to one responsibility risk breaking another.
+1. The value is needed beyond the current computation.
+2. It cannot be derived from one authoritative source.
+3. Its writer and transition rules have one clear owner.
+4. A reader needs the stored distinction.
 
-**Key insights:**
-- The name test: can you describe the class's responsibility in one sentence without using "and"?
-- `Manager`, `Handler`, `Helper`, `Controller`, `Util` are almost always symptoms of unclear design — what specifically does it manage?
-- Prefer small, named types over large bags of loosely related functionality
-- In Swift: `struct` for value semantics and data, `class` for identity and lifecycle — this is a design decision, not just a performance one
-- Low coupling: a type should communicate with as few other types as possible, passing minimal information
-- High cohesion: everything inside a type should be strongly related to its single responsibility
-- Watch for: types that are hard to name, types where methods don't use `self`, types that grow by accumulation
+### Add an error type/code only when all are true
 
-**Code applications:**
+1. At least one caller identifies it structurally.
+2. That caller takes a distinct action.
+3. The distinction is stable enough to become API surface.
+4. Diagnostic text alone is insufficient.
 
-| Problem | Symptom | Fix |
-|---------|---------|-----|
-| **Vague name** | `UserManager` handles auth, profile edits, avatar upload, and session management | `AuthenticationService`, `ProfileEditor`, `AvatarUploader`, `SessionStore` |
-| **Two reasons to change** | `OrderService` fetches orders AND sends notification emails | Split: `OrderRepository`, `OrderNotifier` |
-| **Method without self** | A method on a class never references `self` | It belongs as a free function or on a different type |
-| **Swift struct vs class** | Using `class` for a pure data container because "that's how we always do it" | `struct` for `Address`, `Coordinate`, `PriceBreakdown` — they are values |
-| **TS type vs class** | a `class` with only a constructor and public fields and no methods that use `this` | a plain `type`/`interface` (or zod schema) — it is a value, not an object with behavior |
-| **Accumulation** | `NetworkLayer` started as request-sending, now also caches, retries, and logs | Extract `RequestCache`, `RetryPolicy`, `RequestLogger` |
+Otherwise return or wrap an ordinary error with useful context.
 
-See: [references/class-struct-design.md](references/class-struct-design.md)
+### Add a branch only when all are true
 
----
+1. The condition can occur for valid program inputs or dependency results.
+2. It is detectable with facts available at that point.
+3. The response differs from an existing path.
+4. The response improves correctness or observable behavior.
+5. The branch can be verified proportionally to its risk.
 
-### 9. File Organization: One Object Per File
+### Add an abstraction only when it hides more complexity than it exposes
 
-**Core concept:** A file should have one primary export — one class, one component, one schema, or one tightly-cohesive set of free functions on a single subject. The filename names that export. A reader who wants `WindowManager` opens `window-manager.ts`; they never scroll past three unrelated classes to find it.
+A useful module offers a small interface over substantial policy, state, or mechanism. A shallow wrapper, one-method forwarding type, speculative protocol, or result object that merely renames fields increases cognitive load.
 
-**Why it works:** When the unit of the file matches the unit of thought, the file tree becomes a table of contents. Imports read as a dependency list, diffs are scoped to one concept, and merge conflicts shrink. Files that bundle many exports force the reader to load the whole file to understand any part of it, and they grow without resistance because "it's already this file's general area."
+## Review output
 
-**Key insights:**
-- One primary export per file; co-locate only what is meaningless on its own (a private helper, a props type for one component).
-- Name the file after its export. Two common conventions, applied consistently: **kebab-case** for logic/utility modules (`document-store.ts`, `slug-sanitizer.ts`), **PascalCase** for component files that export a component (`DocumentCard.tsx`). Pick the repo's convention and keep it.
-- Swift analog: one public type per file, `Type+Feature.swift` for focused extensions.
-- Group by **domain folder**, then keep files flat inside it: `handlers/`, `domain/`, `services/`, `components/app-shell/`.
-- Barrels (`index.ts`) are re-export tables of contents — explicit named re-exports, never implementation code. Prefer `export { X } from './x'` lines over a blanket `export *` so the package's public surface is visible and stable.
-- A file that needs a `// MARK:`/`// ===== section =====` banner to separate two unrelated exports is two files.
-- Interface/contract files can carry a clear suffix (`document-store-interface.ts`) when the repo separates abstract contracts from implementations.
+Lead with concrete findings. For a large or feedback-driven diff, use this classification:
 
-**Code applications:**
+| Verdict | Meaning |
+|---|---|
+| Delete | No distinct supported behavior depends on it |
+| Derive | Existing authoritative facts already determine it |
+| Fold | It shares ownership or recovery behavior with an existing path |
+| Keep | It protects a real boundary and changes behavior |
+| Prove | Plausible, but evidence is required before paying permanent complexity |
 
-| Problem | Unclear | Clear |
-|---------|---------|-------|
-| **Grab-bag module** | `utils.ts` exporting 20 unrelated helpers | Split by subject: `date-formatting.ts`, `url-building.ts`, `string-encoding.ts` |
-| **Multiple classes per file** | `managers.ts` with `WindowManager`, `DocumentStore`, `DownloadManager` | One file each: `window-manager.ts`, `document-store.ts`, `download-manager.ts` |
-| **Filename ≠ export** | `helpers.ts` exporting `sanitizeSlug` | `slug-sanitizer.ts` exporting `sanitizeSlug` |
-| **Blanket barrel** | `export * from './everything'` hiding the surface | explicit `export { sanitizeSlug } from './slug-sanitizer'` |
-| **Component + unrelated logic** | `DocumentCard.tsx` also defines the billing client | `DocumentCard.tsx` (component) + `billing-client.ts` (sibling) |
+For each finding, cite the owning code and explain the behavior change, not just the style preference. Do not use a clarity score as a substitute for evidence.
 
-See: [references/file-organization.md](references/file-organization.md)
+## Final standard
 
----
+The result should make these questions easy to answer:
 
-### 10. Named Constants: Hoist Fixed Values, Name Them, Scope Them
+- Where is the one authoritative state?
+- What are the few supported lifecycle states?
+- Which failures actually change recovery?
+- Which module owns each transition and resource?
+- What can be deleted without changing observable behavior?
+- Do the tests protect the contract rather than the implementation shape?
 
-**Core concept:** A literal that carries meaning — a timeout, a retry ceiling, a path, a magic string, a channel name — should be a named constant hoisted to the top of its file, not an anonymous number buried at a call site. This is the cross-language form of Swift's `private`/`fileprivate let`: a value with a name and the narrowest scope that still serves every user in the file.
-
-**Why it works:** `0.3` tells the reader nothing; `animationSettleDuration` tells them what it is and where to change it. Hoisting to the top centralizes the value so a change happens in one place, and naming it converts a mystery into documentation. Scoping it (`fileprivate`/`private`/module-local `const`) keeps it from leaking into the package's public surface where it would become an accidental API.
-
-**Key insights:**
-- TypeScript: `const SCREAMING_SNAKE_CASE` at module top, above the first function: `const MAX_LOG_AGE_MS = 24 * 60 * 60 * 1000`. Keep it un-exported unless other files genuinely need it — an un-exported `const` is file-private by default.
-- Compose constants from constants so relationships stay visible: `const META_DEBOUNCE_MS = isWindows ? 300 : DEBOUNCE_MS`.
-- Lock fixed maps/tuples with `as const` so TypeScript narrows to literal types and typos become compile errors: `const IPC_CHANNELS = { ... } as const`. Derive types from the data with `typeof FIELDS[number]` instead of restating them.
-- Swift: `private let maxRetryCount = 3` / `private enum Layout { static let spacing: CGFloat = 12 }`. Use `fileprivate`/`private` deliberately; a constant only one type needs should not be internal.
-- A literal that appears twice, or that a maintainer would need a comment to understand, has earned a name.
-- Keep the constant at the lowest scope that covers its readers: function-local if one function uses it, file-private if the file uses it, exported only if the contract is shared.
-
-**Code applications:**
-
-| Problem | Unclear | Clear |
-|---------|---------|-------|
-| **Magic number** | `setTimeout(fn, 100)` | `const DEBOUNCE_MS = 100; setTimeout(fn, DEBOUNCE_MS)` |
-| **Repeated magic string** | `'documents:get'` typed in three files | `IPC_CHANNELS.documents.GET` from one `as const` registry |
-| **Leaked constant** | `export const RETRY_LIMIT = 3` used only in this file | drop `export` — keep it module-private |
-| **Stringly-typed set** | a `string[]` of field names restated as a type | `const FIELDS = [...] as const; type Field = typeof FIELDS[number]` |
-| **Swift inline literal** | `DispatchQueue.main.asyncAfter(deadline: .now() + 0.3)` | `private let settleDelay: TimeInterval = 0.3` |
-
-See: [references/file-organization.md](references/file-organization.md) (constants section) and [references/typescript-and-electron.md](references/typescript-and-electron.md).
-
----
-
-### 11. Mechanical Consistency: Defer Formatting to the Formatter
-
-**Core concept:** Indentation, quote style, semicolons, trailing commas, line width, and import wrapping are clarity decisions too — but they should be made *once*, by a formatter, not re-litigated per file. Adopt Prettier (or the repo's configured formatter) and let it own all mechanical style so humans spend their attention on names and structure, not whitespace.
-
-**Why it works:** Inconsistent mechanical style adds noise to every diff and every read — the eye trips on a stray quote-style change the same way it trips on a bad name. A formatter makes mechanical style *invisible*: every file looks the same, so genuine logic changes are the only thing a diff shows. The Prettier philosophy is the point — **stop debating style, encode it, run it on save and in CI.**
-
-**Key insights:**
-- Run Prettier on TypeScript/JS/JSON/CSS/Markdown; pair it with a linter (ESLint) for correctness rules, not style — the formatter owns style, the linter owns bugs.
-- Prettier's opinionated defaults are a fine baseline: 80-col print width, 2-space indent, semicolons, double quotes, trailing commas (`es5`/`all`), `arrowParens: always`. Override only with a committed `.prettierrc`, and then never by hand.
-- Make it non-negotiable: format-on-save in the editor, plus a CI check (`prettier --check` / `eslint`) so unformatted code cannot merge. A `build` script that runs `lint` first is the enforcement point.
-- Match what already exists. If a file is semicolon-less and single-quoted because that's the repo's Prettier config, follow the config — do not hand-introduce the "default" style. The formatter's config is the source of truth, not your preference.
-- Do not hand-align columns, hand-wrap arguments, or fight the formatter with `// prettier-ignore` except for genuinely tabular data where alignment carries meaning.
-- Consistency beats personal preference: a slightly-less-preferred style applied uniformly reads better than two "better" styles mixed.
-
-**Code applications:**
-
-| Problem | Unclear | Clear |
-|---------|---------|-------|
-| **Mixed quote/semicolon style** | some files `'x'` no-semi, others `"x";` | one `.prettierrc`, formatter run in CI — the repo has exactly one style |
-| **Hand-wrapped arguments** | manually aligned multi-line call that breaks on the next edit | let Prettier wrap at print width; re-runs stay stable |
-| **Style churn in diffs** | a logic PR also reformats 40 lines by hand | format separately (or never by hand); logic diffs stay readable |
-| **Style debate in review** | reviewer comments on quote style | not a review topic — the formatter already decided |
-| **Editor drift** | each contributor's editor formats differently | committed config + format-on-save + `--check` gate |
-
-See: [references/formatting-consistency.md](references/formatting-consistency.md)
-
----
-
-### 12. Electron Boundaries: Main, Preload, and Renderer Are Different Worlds
-
-**Core concept:** An Electron app is three programs with three trust levels — the **main** process (Node, full OS access), the **renderer** (a sandboxed browser running your UI), and the **preload** (the only bridge between them). Clarity in Electron means each world contains only what belongs to it, and they talk through one typed, allowlisted surface — never by reaching across the boundary.
-
-**Why it works:** When the renderer can touch Node, filesystem, native capture, or tokens directly, the boundary that exists for security and testability dissolves, and every file becomes a potential cross-process tangle. A single typed bridge makes the contract between UI and system legible: a reader sees exactly what the renderer is allowed to ask for, and the type system enforces it. (This is the standard Electron security posture: the renderer must not access Node or secrets; a minimal typed preload allowlist is the only bridge.)
-
-**Key insights:**
-- **Separate the three worlds by directory and never blur them:** `src/main/`, `src/preload/`, `src/renderer/`, with cross-world DTOs/types in a `src/shared/`. A file's directory tells the reader its trust level.
-- **The renderer never imports Node.** No `fs`, `child_process`, `electron` main APIs, native modules, or secret material in renderer code. If the UI needs that work, it asks the main process to do it.
-- **Expose one typed API over `contextBridge`, not raw IPC.** A single `contextBridge.exposeInMainWorld('appAPI', api)` with a fully-typed interface (`window.appAPI.createSession(): Promise<Session>`) beats sprinkling `ipcRenderer.invoke('some-string')` through the UI. Type the channel registry once (`as const`) and let both sides share it, so a typo is a compile error.
-- **Keep `contextIsolation` on and `nodeIntegration` off.** The preload's allowlist is the security contract; widen it deliberately, one method at a time, never with a blanket pass-through.
-- **Put portable logic in process-neutral packages** (`packages/core`, `packages/shared`) with no Electron, DOM, or OS imports, so it is testable and reusable. Electron-specific handlers (BrowserWindow, autoUpdater, native dialogs) stay in `main/`.
-- **Name handlers and channels by namespace:** `sessions:get`, `window:close` — a `namespace:action` string read straight from a shared `as const` map, so the wire protocol is self-documenting.
-- **Secrets and tokens live in the main process** behind secure storage, never in renderer `localStorage` or a renderer-visible global.
-
-**Code applications:**
-
-| Problem | Unclear / unsafe | Clear |
-|---------|------------------|-------|
-| **Renderer reaches into Node** | `import { readFile } from 'fs/promises'` inside a `.tsx` | `await window.appAPI.readDocument(id)` → main does the I/O |
-| **Stringly-typed IPC** | `ipcRenderer.invoke('docments:get', id)` (typo ships) | `IPC_CHANNELS.documents.GET` from a shared `as const`; typed client proxy |
-| **Untyped bridge** | `contextBridge.exposeInMainWorld('api', { invoke })` returning `any` | expose a typed `interface AppAPI` with concrete `Promise<T>` methods |
-| **Logic stuck in main** | business rules written inline in an IPC handler | rule lives in `packages/core`; the handler just calls it |
-| **Token in renderer** | `localStorage.setItem('token', t)` | token in main-process secure storage; renderer never sees it |
-| **nodeIntegration on** | renderer has full Node for "convenience" | `contextIsolation: true`, `nodeIntegration: false`, preload allowlist |
-
-See: [references/typescript-and-electron.md](references/typescript-and-electron.md) (Electron section)
-
----
-
-### 13. Dependencies and Seams: One Real Implementation, Few Seams, Mock Less
-
-**Core concept:** Each behavior should have exactly **one canonical implementation**, called everywhere it is needed — not re-implemented inline at each call site. Introduce an abstraction seam (a Swift `protocol` or overridable subclass; a TypeScript `interface`) **only where behavior genuinely varies** — a real second implementation, or a real test substitute — and design that seam deliberately: named, minimal, with a real implementation and a real in-memory fake. Keep dependency injection limited to those real seams, and test against real implementations or shared fakes rather than mock frameworks.
-
-**Why it works:** The same behavior copied across a dozen call sites drifts: a fix lands in three copies and the other nine keep the bug, and the reader can't tell which copy is authoritative. At the other extreme, threading every collaborator through initializers "for testability," exposing dependencies as anonymous closures, and asserting on mock call-transcripts all add wiring noise and couple tests to *how* the code works instead of *what* it does — so the tests pass while the system is broken and break while it is fine. One named implementation behind one well-chosen seam keeps both the production call sites and the tests honest and legible.
-
-**Key insights:**
-- **One behavior, one implementation.** If you find yourself writing the same parsing/formatting/validation inline at the third call site, extract a named function or type and call it everywhere. Duplicated ad-hoc implementations are a latent bug farm.
-- **A seam earns its place only when behavior genuinely varies** — there is a real alternative implementation, or a real in-memory substitute used in tests. Do not add a protocol + injection for something that has exactly one implementation forever and no fake.
-- **Swift: design seams as protocols (or an overridable subclass), not stored closure/block properties.** `protocol DocumentStore` with `RemoteDocumentStore` and `InMemoryDocumentStore` reads as a contract, surfaces in the type system, and is reusable across many tests. A constructor taking `onFetch: () async throws -> [Document]` closures hides the contract, resists reuse, and scatters behavior.
-- **Closures are right for one-off callbacks and small strategy parameters** — not as a substitute for a named dependency contract that several call sites and tests share.
-- **Prefer real implementations and in-memory fakes over mock frameworks.** A fake is real code with real behavior, written once and reused; a mock asserts on interactions and pins the test to the implementation. Mock servers are not an acceptance substitute — exercise real fixtures/staging at the boundary.
-- **Inject only what varies.** If there is one implementation forever, a direct reference is clearer than protocol + DI ceremony. Construct stable internals directly; inject the one or two seams that actually have substitutes.
-- **Test through the public API, asserting outcomes, not call sequences.** A test that can only pass against a mock is testing the mock.
-
-**Code applications:**
-
-| Problem | Avoid | Prefer |
-|---------|-------|--------|
-| **Duplicated inline impl** | date formatting re-written at 12 call sites | one `formatRelative(_:)` / `DateFormatting` used everywhere |
-| **Closure seam (Swift)** | `init(onFetch: () async throws -> [Item])` | `protocol ItemStore` + `RemoteItemStore` / `InMemoryItemStore` |
-| **Over-injection** | every collaborator threaded through `init` "for testability" | inject the 1–2 real seams; build stable internals directly |
-| **Mock-heavy test** | `verify(mock.fetch).calledOnce()` asserting interactions | assert the outcome against an in-memory fake |
-| **Speculative seam** | `protocol` with one implementation and no fake | use the concrete type directly until a second implementation exists |
-| **Mock server as acceptance** | a stubbed HTTP server standing in for the real API | real fixtures against staging at the boundary |
-
-See: [references/testing-and-seams.md](references/testing-and-seams.md)
-
----
-
-## Common Mistakes
-
-| Mistake | Why It Fails | Fix |
-|---------|-------------|-----|
-| **Verb-less noun names** | `UserData`, `RequestInfo` — what does it *do*? | Name what it represents precisely: `AuthenticatedUser`, `PendingRequest` |
-| **Negated booleans** | `!isNotEnabled` requires two mental inversions | Always name the positive state: `isEnabled` |
-| **Else after return** | `if error { return }; else { doWork() }` — the `else` is noise | Remove it: the return already guarantees the else case |
-| **Flag parameters** | `save(user, force: true)` — the caller knows two behaviors exist | Split: `save(user)`, `forceSave(user)` |
-| **Mixed abstraction** | `processOrder()` calls `applyDiscount()` but also does `price * rate` inline | Keep one level: either all calls or all computation |
-| **Accumulating types** | Adding to `UserManager` because "it's user-related" | Ask: would this responsibility cause the class to change for a different reason? If yes, it belongs elsewhere |
-| **Repository-blind refactors** | Improving one function while making it read unlike the surrounding module | Preserve the local naming, file split, and control-flow patterns used by the rest of the repository |
-| **Comment-instead-of-rename** | `// this is the active users list` above `var data` | The name should be `activeUsers`; the comment is evidence of a naming failure |
-| **Long parameter lists** | `createRequest(url:method:headers:body:timeout:retry:)` | Group into `RequestConfiguration` |
-| **Boolean state piles** | Several `is*` flags must be updated together or cannot validly overlap | Replace them with one enum or state value that names each valid state |
-| **Stored one-shot tasks** | Keeping `Task?` properties for work that is never cancelled or replaced | Keep task storage only for real lifecycle ownership; otherwise launch locally and let it finish |
-| **Casual `try?`** | Important lifecycle or user-facing failures disappear | Use scoped `do/catch`; trace best-effort failures and surface user-facing failures |
-| **Broad error wrapper** | Validation, decoding, dispatch, and side effects all share one catch block | Early-return preconditions first, then catch only the throwing operation |
-| **Grab-bag file** | `utils.ts` / `managers.ts` bundles many unrelated exports | One primary export per file, named after the file |
-| **Filename hides export** | `helpers.ts` exports `sanitizeSlug` | Rename the file to its export: `slug-sanitizer.ts` |
-| **Inline magic literal** | `setTimeout(fn, 100)`, `'documents:get'` typed in three places | Hoist to a named module-top `const`; lock maps with `as const` |
-| **Leaked constant** | `export const` for a value only this file uses | Drop `export` — keep it file-private |
-| **Hand-formatting** | Manually aligned/wrapped code, mixed quotes and semicolons | Adopt Prettier; format on save and in CI; never style by hand |
-| **`unknown` catch misuse** | `catch (e) { e.message }` assuming `e` is an `Error` | `e instanceof Error ? e.message : 'Unknown error'` |
-| **Renderer touches Node** | `import 'fs'` or a token in a `.tsx` renderer file | Go through the typed preload bridge; do Node work in main |
-| **Stringly-typed IPC** | `ipcRenderer.invoke('typo:channel')` | Shared `as const` channel map + typed client; typos fail to compile |
-| **Duplicated implementation** | the same logic re-written inline at a dozen call sites | One named implementation, referenced everywhere |
-| **Closure-injected deps (Swift)** | dependencies passed as `onFetch:`/`onSave:` blocks | A named `protocol` seam with real + in-memory implementations |
-| **Over-injection** | every collaborator threaded through `init` for "testability" | Inject only the seams that vary; build stable internals directly |
-| **Speculative seam** | `protocol` with one impl and no fake | Use the concrete type until a real second impl/fake exists |
-| **Mock-heavy tests** | asserting on mock call transcripts | Assert outcomes against a real implementation or in-memory fake |
-
----
-
-## Quick Diagnostic
-
-| Question | If No | Action |
-|----------|-------|--------|
-| Can you read the function name and know what it does without reading the body? | Name is vague or misleading | Rename to reveal intent |
-| Is the main logic of every function at the leftmost indentation level? | Nested conditionals obscure flow | Invert conditions and return early |
-| Does each function do exactly one thing? | Function has "and" in its description | Split at the "and" |
-| Does each function operate at one level of abstraction? | Orchestration mixed with implementation | Extract the lower-level operations into named functions |
-| Does every boolean variable start with `is`, `has`, `can`, or `should`? | Booleans require context to interpret | Rename with appropriate prefix |
-| Are several booleans or optionals describing one lifecycle? | Hidden state machine with possible impossible combinations | Replace with an enum or grouped state value |
-| Is a `Task` stored because the owner must cancel or replace it later? | Task storage is just bookkeeping noise | Make it local/fire-and-forget, or name the lifecycle that owns it |
-| Is `try?` hiding a failure that changes lifecycle or UI state? | The code is silent in exactly the place users need feedback | Use scoped `do/catch`, surface or trace according to the boundary |
-| Are precondition guards inside a broad `do/catch`? | Expected validation is mixed with exceptional failure | Move guards before `do/catch` and return early |
-| Can you describe every class responsibility in one sentence without "and"? | Type has multiple responsibilities | Split by responsibility |
-| Are `Manager`, `Helper`, or `Util` in any type names? | Responsibilities are not well-defined | Replace with specific names |
-| Does any function take more than 3 parameters? | Interface is too wide | Group related parameters into a type |
-| Does each file have one primary export named after the file? | File is a grab-bag, or filename hides its export | Split by subject; rename file to its export |
-| Is every meaningful literal a named, top-of-file constant at the narrowest scope? | Magic numbers/strings inline, or constants leaked via `export` | Hoist + name; `as const` for fixed maps; drop needless `export` |
-| Is mechanical style owned by a formatter run in CI? | Quotes/semicolons/wrapping vary; style churns diffs | Adopt Prettier; format on save and gate in CI |
-| In Electron, does the renderer stay free of Node, secrets, and raw IPC? | Renderer imports `fs`/tokens or calls stringly-typed IPC | Route through one typed `contextBridge` allowlist; Node work in main |
-| Is each behavior implemented once and referenced, not re-implemented per call site? | Same logic duplicated across many sites | Extract one named implementation; call it everywhere |
-| Does every abstraction seam have a real second implementation or a real fake? | A protocol/interface with one impl and no substitute | Drop the seam; use the concrete type until variation is real |
-| Are Swift dependency seams protocols/subclasses rather than injected closures, and is DI limited to what varies? | Closure-bag dependencies or everything injected | Named `protocol` seams; inject only the seams with substitutes |
-| Do tests assert outcomes against real/fake implementations rather than mock transcripts? | Tests verify mock call sequences | In-memory fakes + outcome assertions; real fixtures at the boundary |
-| Does the proposed refactor still read like the surrounding repository? | Change is clearer in isolation but less native in context | Re-align naming, file organization, and control-flow with the local house style |
-
----
-
-## Review Workflow
-
-Use this sequence when the skill is applied:
-
-1. Sample 3–5 representative files from the same module or layer before giving advice.
-2. Infer local conventions: naming suffixes, file split patterns, comment density, control-flow style, and UI construction habits.
-3. Score current clarity from 0–10.
-4. Identify the smallest set of changes that would move the code toward 10/10.
-5. Prefer repository-aligned fixes over generic rewrites when both are equally clear.
-6. If a repository convention is genuinely harmful, say so explicitly and justify breaking it.
-
-### Suggested Output Format
-
-When reviewing code with this skill, prefer this structure:
-
-1. `Clarity score: X/10`
-2. `What is already clear`
-3. `What is confusing`
-4. `What to change next`
-5. `Repository conventions to preserve`
-
-This keeps the advice concrete and makes the tradeoff between universal clarity and local consistency explicit.
-
----
-
-## Reference Files
-
-- [naming-conventions.md](references/naming-conventions.md): Full naming rules by category — functions, booleans, classes, parameters, with Swift/Go/TypeScript examples
-- [early-return.md](references/early-return.md): Guard clause pattern, Swift `guard`, Go idioms, when not to use early return
-- [function-design.md](references/function-design.md): Single responsibility, abstraction level consistency, parameter design, side effects
-- [repository-conventions.md](references/repository-conventions.md): How to infer a repository's local house style and keep clarity improvements aligned with it
-- [abstraction-levels.md](references/abstraction-levels.md): Step-down rule, mixing levels as a code smell, organizing call hierarchies
-- [class-struct-design.md](references/class-struct-design.md): Single responsibility, Swift struct vs class decision, coupling and cohesion, naming types
-- [file-organization.md](references/file-organization.md): One object per file, file naming, folder/barrel structure, and module-level named constants
-- [formatting-consistency.md](references/formatting-consistency.md): The Prettier pattern — deferring mechanical style to a formatter, config, and CI enforcement
-- [typescript-and-electron.md](references/typescript-and-electron.md): TypeScript naming/types/discriminated unions/error handling and the Electron main/preload/renderer boundary with typed IPC
-- [testing-and-seams.md](references/testing-and-seams.md): One canonical implementation, protocol/subclass seams over injected closures, minimal dependency injection, and fakes-over-mocks testing
-
----
-
-## Further Reading
-
-- [*"Clean Code"*](https://www.amazon.com/Clean-Code-Handbook-Software-Craftsmanship/dp/0132350882) by Robert C. Martin — chapter-level coverage of naming, functions, and classes
-- [*"A Philosophy of Software Design"*](https://www.amazon.com/Philosophy-Software-Design-2nd/dp/173210221X) by John Ousterhout — deep modules and information hiding
-- [common-coding-conventions](https://tum-esi.github.io/common-coding-conventions/) — language-agnostic naming and abstraction guide
-- [Guard Clauses - boot.dev](https://blog.boot.dev/clean-code/guard-clauses/) — guard clause pattern with cross-language examples
+Clarity is achieved when the normal path is obvious, exceptional paths are few and justified, and every remaining concept earns its place.

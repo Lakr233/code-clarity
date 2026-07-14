@@ -1,7 +1,7 @@
 interface:
   display_name: "Code Clarity"
-  short_description: "Readable code: naming, flow, focused files, constants, formatting, and testable seams"
-  default_prompt: "Use $code-clarity to review this code for clarity while preserving the repository's local style."
+  short_description: "Reduce state, branches, errors, and seams safely"
+  default_prompt: "Use $code-clarity to simplify this change by removing unnecessary state, errors, branches, and abstractions while preserving behavior."
 
 policy:
   allow_implicit_invocation: true

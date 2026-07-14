@@ -74,7 +74,7 @@ func synchronizeCalendar() async throws { ... }
 
 ## Boolean Naming
 
-Booleans should always read as a direct answer to a yes/no question. The reader should be able to say "is [name]?" or "has [name]?" and get a natural-language sentence.
+Boolean names should make the true case obvious. `is`/`has`/`can`/`should` are strong defaults in Swift and TypeScript. Go commonly uses concise names such as `ok`, `done`, or `enabled` when scope makes the meaning clear. Follow language and repository idiom rather than forcing one prefix everywhere.
 
 ### Prefixes
 
@@ -90,17 +90,10 @@ Booleans should always read as a direct answer to a yes/no question. The reader 
 | Double negative (avoid) | Positive (prefer) |
 |------------------------|------------------|
 | `!isNotEnabled` | `isEnabled` |
-| `!isEmpty` | `hasElements` (add extension) |
 | `!isDisabled` | `isEnabled` |
 | `!isInvalid` | `isValid` |
 
-**Swift extension pattern:**
-```swift
-extension Collection {
-    var hasElements: Bool { !isEmpty }
-    var isNotEmpty: Bool { !isEmpty } // acceptable but hasElements reads better
-}
-```
+Do not add a project-wide helper merely to remove one ordinary negation. `if !items.isEmpty` is idiomatic and clearer than another extension unless the positive predicate is reused and carries real domain meaning.
 
 ### Avoid ambiguous state words
 
@@ -124,7 +117,7 @@ var isSessionActive = true
 
 ### The Name Test
 
-Describe the type's responsibility in one sentence, without using "and". If you can't, the type has too many responsibilities.
+Describe the type's coherent role at its call sites. If the description becomes a list of unrelated policies, resources, or reasons to change, the type may have accumulated responsibilities. The word “and” is a prompt to inspect cohesion, not an automatic reason to split.
 
 - ✅ `TokenRefresher` — refreshes authentication tokens
 - ✅ `RequestThrottler` — throttles outgoing requests to respect rate limits
@@ -132,14 +125,14 @@ Describe the type's responsibility in one sentence, without using "and". If you 
 
 ### Red flag words
 
-These words almost always signal unclear responsibility:
+These words are useful when the repository gives them a stable meaning, but otherwise deserve a more specific alternative:
 
 | Red flag | Why | Alternative |
 |----------|-----|-------------|
-| `Manager` | Everything "manages" something | `AuthenticationService`, `SessionStore` |
-| `Helper` | Helpers help... what, and how? | Name the specific operation |
+| `Manager` | Can hide what lifecycle or resources it owns | Keep for established coordinators; otherwise name the owned role |
+| `Helper` | Can hide the operation or subject | Name the operation or subject when that improves discovery |
 | `Util` / `Utils` | Bag of unrelated functions | Group by domain: `DateFormatting`, `StringEncoding` |
-| `Handler` | Too generic | `WebhookProcessor`, `KeyboardEventResponder` |
+| `Handler` | Clear only when the handled event/boundary is obvious | `WebhookProcessor`, `KeyboardEventResponder` |
 | `Controller` | Acceptable in MVC/UIKit, but vague elsewhere | `CheckoutCoordinator`, `FormValidator` |
 | `Base` | Signals premature inheritance | Prefer protocols and composition |
 | `Common` | "Common to what?" | Name the shared concept |
@@ -193,9 +186,9 @@ list.insert(item, at: 0)
 tableView.move(from: 3, to: 7)
 ```
 
-### Too many parameters
+### Related parameters
 
-When a function takes more than 3 parameters, group related ones into a type:
+Group parameters when they form one concept, share validation, or repeatedly travel together. Do not introduce a configuration type solely because a numeric threshold was crossed:
 
 ```swift
 // Avoid
@@ -254,7 +247,7 @@ DispatchQueue.main.asyncAfter(deadline: .now() + animationSettleDuration) { ... 
 | Concept | Swift | Go | TypeScript |
 |---------|-------|-----|-----------|
 | Action function | `func submitOrder()` | `func submitOrder()` | `function submitOrder()` |
-| Boolean | `isEnabled: Bool` | `isEnabled bool` | `isEnabled: boolean` |
+| Boolean | `isEnabled: Bool` | `enabled bool`, `ok bool` | `isEnabled: boolean` |
 | Async fetch | `func fetchUser() async throws` | `func fetchUser() (User, error)` | `async function fetchUser(): Promise<User>` |
 | Computed value | `var activeUsers: [User]` (property) | `func activeUsers() []User` | `get activeUsers(): User[]` |
 | Config struct | `struct RequestConfig` | `type RequestConfig struct` | `interface RequestConfig` |

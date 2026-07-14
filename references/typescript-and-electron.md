@@ -94,7 +94,7 @@ function render(state: LoadState) {
 }
 ```
 
-Real apps scale this pattern to large event/state unions — a domain event type with dozens of tagged variants, or a route state discriminated on a `route` field — each with tiny type-guard helpers instead of scattered booleans:
+Use this pattern when the variants form a genuinely closed set and consumers handle them exhaustively. Do not add a union member for every diagnostic detail or intermediate step; if several variants drive identical behavior, they may be one state with separate diagnostic data.
 
 ```ts
 type RouteState =
@@ -110,7 +110,7 @@ A `default: assertNever(state)` arm makes the compiler enforce exhaustiveness �
 
 ### Schemas at the boundary
 
-Validate external/persisted data with a schema (zod or similar) so the runtime shape and the compile-time type can't drift. Derive the type from the schema — never restate it.
+Validate untyped input at its entry boundary with a schema or focused type guard. When the schema is authoritative, derive the TypeScript type from it so runtime and compile-time definitions cannot drift; when another generated contract is authoritative, derive from that source instead of creating a second schema.
 
 ```ts
 const DocumentSchema = z.object({
@@ -179,7 +179,7 @@ async function handle(input: Input) {
 
 ### Result types for expected failure
 
-When failure is a routine, expected outcome (validation, parsing user input), don't `throw` — return a discriminated Result. The caller handles it with an early return, and the success payload is typed.
+Use a discriminated result when failure is a routine outcome that callers inspect and handle locally. Use `throw` when callers normally propagate the failure to one error boundary. Follow one convention within an API; do not add a result union merely to convert it back into an exception at every call site.
 
 ```ts
 type Validated =
@@ -204,7 +204,7 @@ if (!result.valid) return showError(result.error)
 use(result.path) // typed, present
 ```
 
-Reserve `throw` for genuinely exceptional/unexpected failures (network down, invariant broken). A dedicated `Result` library (e.g. neverthrow) is fine; a hand-rolled `{ ok } | { ok: false }` union is also fine — be consistent.
+A dedicated `Result` library or a small hand-written union can both work. The important distinction is caller behavior: model expected branches as values when that simplifies callers, and use exceptions when propagation is the common path.
 
 ### Don't float promises
 

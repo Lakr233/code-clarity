@@ -1,24 +1,26 @@
 # File Organization and Named Constants
 
-Two decisions shape a codebase's readability before a reader looks at a single function: **how code is split into files**, and **how fixed values are named and scoped**. Both are about making the file tree and the top of each file act as documentation. This reference covers the one-object-per-file rule and the module-level constant pattern (the cross-language form of Swift's `fileprivate let`).
+Two decisions shape a codebase's readability before a reader looks at a single function: **how code is split into files**, and **how fixed values are named and scoped**. Both are about making the file tree and the top of each file act as documentation. This reference covers cohesive modules and the module-level constant pattern.
 
 The examples below use a neutral, illustrative desktop-app domain (documents, uploads, settings); apply the same shapes to your own domain.
 
 ---
 
-## Part 1 — One Object Per File
+## Part 1 — One Cohesive Subject Per File
 
 ### The rule
 
-**A file has one primary export, and the filename names it.** A reader looking for `WindowManager` opens `window-manager.ts`. A reader looking for the `DocumentCard` component opens `DocumentCard.tsx`. The file tree becomes a table of contents instead of a pile of grab-bags.
+**A file should have one discoverable subject, and its filename should name that subject.** A file may contain several exports when they form one API, change together, and are normally understood together. The file tree should remain a table of contents rather than a collection of arbitrary grab-bags.
 
-Co-locate only what is meaningless on its own:
+Common reasons to co-locate declarations:
 
-- a `private` helper used by the one export
-- the props/`interface` type for a single component
-- a small type alias the export's signature needs
+- a public type and the small values/functions that constitute its API;
+- a schema and the type inferred from it;
+- a discriminated union and its exhaustive helpers;
+- private implementation used only by the subject;
+- declarations that always change in the same commits for the same reason.
 
-If a co-located thing is independently useful, it wants its own file.
+Split when a declaration has independent consumers, independent reasons to change, or makes the filename misleading. Do not split merely to satisfy one-type-per-file style; excessive splitting makes readers traverse shallow files to understand one concept.
 
 ### Why it works
 
@@ -34,7 +36,7 @@ The "pull force" of a specific filename is the same effect as a specific type na
 
 ### File naming conventions
 
-Pick one and apply it without exception. Two common, internally-consistent schemes:
+Follow the repository's established convention and make new filenames predictable. Two common, internally consistent schemes are:
 
 | File kind | Convention | Examples |
 |-----------|-----------|----------|
@@ -44,7 +46,7 @@ Pick one and apply it without exception. Two common, internally-consistent schem
 | Closely-related satellite of a component | component name + dotted concern | `DocumentCard.toolbar.ts` next to `DocumentCard.tsx` |
 | Barrel / re-export | `index.ts` | `packages/shared/src/documents/index.ts` |
 
-Swift analog: one public type per file; `Type+Feature.swift` for a focused extension (`UIView+Layout.swift`, `Document+Persistence.swift`).
+Swift analog: name the file after the owning type or feature. Keep tightly coupled support types nearby; use `Type+Feature.swift` when an extension is independently navigable and the repository already follows that pattern.
 
 Avoid: camelCase filenames, plural grab-bag names (`managers.ts`, `helpers.ts`, `utils.ts`, `types.ts` as a dumping ground), and files whose name doesn't appear as an export.
 
@@ -77,7 +79,7 @@ src/
 
 ### Barrels are tables of contents, not code
 
-An `index.ts` barrel re-exports the public surface of a folder. It contains **no implementation**.
+An `index.ts` barrel should make the public surface easy to inspect. Prefer re-exports only; keep a tiny registration/composition function there only when the repository consistently treats the index as that folder's entry point.
 
 ```ts
 // Good — explicit, visible surface
@@ -107,7 +109,7 @@ The test is cohesion: would a reader expect to find all of these by opening this
 | Symptom | Fix |
 |---------|-----|
 | File needs a banner comment to separate two exports | Split into two files |
-| Filename is plural and generic (`managers.ts`) | One file per object |
+| Filename is plural and generic (`managers.ts`) | Rename around the cohesive subject or split unrelated declarations |
 | You can't predict the filename from the symbol you want | Rename file to its primary export |
 | Barrel uses `export *` and you can't tell what's public | Convert to explicit named re-exports |
 | A "helper" file keeps absorbing unrelated functions | Name files by subject so each resists drift |
@@ -126,7 +128,7 @@ A literal with meaning — a timeout, a retry ceiling, a path, a wire string, a 
 
 ### TypeScript
 
-Top-of-module `const SCREAMING_SNAKE_CASE`, above the first function, un-exported unless genuinely shared:
+Use the repository's constant naming convention. Keep module constants above their readers and unexported unless genuinely shared; many TypeScript repositories use `camelCase`, while others reserve `SCREAMING_SNAKE_CASE` for process-wide or protocol constants.
 
 ```ts
 // module top — file-private by default (no `export`)
@@ -146,7 +148,7 @@ function writeLog(entry: LogEntry) {
 Rules of thumb:
 
 - **Don't `export` a constant only this file uses.** An un-exported `const` is module-private — that is the `fileprivate` you want. Export only when the value is a shared contract.
-- **A literal that appears twice, or needs a comment to understand, has earned a name.**
+- **Name a literal when the name carries domain meaning, centralizes a shared contract, or prevents inconsistent edits.** Repetition alone is not enough; obvious local values can remain inline.
 - Keep the constant at the lowest scope covering its readers: function-local if one function uses it, module-private if the file uses it, exported only if shared.
 
 ### `as const` for fixed maps and tuples

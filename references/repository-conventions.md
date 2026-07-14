@@ -31,7 +31,7 @@ Examples of repository-local patterns:
 
 - `Type+Feature.swift`
 - `Feature/Components/`
-- one public type per file
+- one cohesive subject per file, or one public type per file when that is the established convention
 - nested protocol definitions near the owning type
 
 If a codebase strongly prefers split extensions such as `+Delegate`, `+Layout`, and `+DataSource`, adding a new feature as a random inline block in the primary file reduces clarity even if the logic itself is clean.

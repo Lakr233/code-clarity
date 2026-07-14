@@ -2,15 +2,15 @@
 
 A function is the smallest unit of reusable thought in code. Its design determines how easily a reader can understand what the code does, how safely it can be modified, and how effectively it can be tested. The principles here apply regardless of language.
 
-## The Single Responsibility Principle for Functions
+## One Coherent Contract
 
-**A function should do exactly one thing.** The test: can you describe what the function does in one sentence, without using "and", "then", or "also"?
+**A function should expose one coherent operation at its call site.** It may coordinate several internal steps when those steps always belong to the same operation and share one error/ownership boundary.
 
 - ✅ `validateEmailFormat(_ email: String) -> Bool` — validates an email format
 - ✅ `persistUser(_ user: User) throws` — persists a user to storage
-- ❌ `validateAndSaveUser(_ user: User) throws` — validates... and saves. Two things.
+- ⚠️ `validateAndSaveUser(_ user: User) throws` — unclear unless validation is an inseparable precondition of this save operation.
 
-The `and` test catches the most common violations. Apply it to function names as a quick diagnostic.
+Words such as `and`, `then`, or `also` are diagnostic signals, not proof that a split is needed. Split when callers need the steps independently, the steps change for different reasons, or the function mixes unrelated ownership. Keep orchestration together when extraction would create pass-through functions and force every caller to reconstruct the same sequence.
 
 ---
 
@@ -63,12 +63,9 @@ The reader of `checkout` should never need to think about URL construction. That
 
 ## Function Length
 
-Function length is a symptom, not a rule. A 60-line function doing exactly one thing at one abstraction level is better than a 10-line function that mixes three concerns.
+Function length is a symptom, not a rule. A longer function with one coherent contract and consistent abstraction can be clearer than several tiny functions that only forward arguments.
 
-That said, length correlates with problems:
-- Over 20–30 lines: re-examine whether one clear responsibility remains
-- A block requiring a `// MARK:` or section comment is usually a function waiting to be extracted
-- If scrolling is required to read a function, extraction is likely warranted
+Length can reveal problems, but no numeric threshold is meaningful across languages and domains. Re-examine a function when it mixes abstraction levels, repeats cleanup or error handling, contains branches with independent purposes, or prevents a reader from seeing the contract. Extract only when the new name hides a coherent detail or creates a reusable operation.
 
 ### The comment-as-function signal
 
@@ -107,17 +104,13 @@ private func buildCheckoutPayload() -> CheckoutPayload { ... }
 
 ## Parameters
 
-### Count
+### Group by meaning, not count
 
-| Count | Guidance |
-|-------|---------|
-| 0–2 | Ideal |
-| 3 | Acceptable, review whether a struct makes sense |
-| 4+ | Almost always a struct/config type is appropriate |
+Several independent scalar parameters can be clearer than a generic configuration bag. Introduce a parameter type when the values form one domain concept, must be validated together, or repeatedly travel together. Do not create a struct solely to reduce the visible parameter count; that only moves complexity into another declaration.
 
 ### Avoid boolean flag parameters
 
-Boolean parameters that change a function's behavior are a code smell. They signal that two different functions have been merged:
+Boolean parameters deserve scrutiny when they select substantially different algorithms or are unclear at the call site:
 
 ```swift
 // Avoid — caller must know what `true` means
@@ -130,7 +123,7 @@ func render(view: UIView)
 func renderAnimated(view: UIView)
 ```
 
-The exception is when the boolean genuinely controls a small variation that is always contextually clear, such as Swift's standard `animated:` parameter on system APIs. But custom code should be scrutinized.
+A well-labeled boolean is appropriate for one small orthogonal variation, such as Swift's `animated:` parameters. Use separate functions or an enum when the alternatives have different preconditions, side effects, or payloads.
 
 ### Avoid output parameters
 
@@ -236,10 +229,10 @@ Use sparingly. If a return value is commonly ignored, ask why — usually it sig
 
 | Principle | Check |
 |-----------|-------|
-| Single responsibility | Describe in one sentence without "and" |
+| Coherent contract | Callers see one operation and one ownership boundary |
 | One abstraction level | All calls in the function should be at the same "height" |
-| Parameter count | ≤3; else use a config struct |
-| No boolean flags | Split into two functions |
+| Parameters | Group values only when they form one concept |
+| Boolean flags | Keep small labeled variations; split distinct operations |
 | No output parameters | Return a value instead |
 | Side effects in name | If it writes/sends/logs, the name should say so |
 | Comment-as-function | If you wrote a comment, write a function |
