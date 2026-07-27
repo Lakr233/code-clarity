@@ -1,6 +1,6 @@
 # Formatting Consistency: The Prettier Pattern
 
-Mechanical style — indentation, quotes, semicolons, trailing commas, line width, import wrapping — is a clarity concern, but it is the one concern that should be decided **once, by a tool**, and then never thought about again. This reference is about adopting an opinionated formatter (Prettier for the JS/TS world; `gofmt`, `swift-format`, `black` for others) and letting it own all mechanical style so human attention goes to names and structure.
+Mechanical style — indentation, quotes, semicolons, trailing commas, line width, import wrapping — is a clarity concern, but it is the one concern that should be decided **once, by a repository-owned tool and reviewed configuration**, and then rarely revisited. This reference is about adopting an opinionated formatter (Prettier for the JS/TS world; `gofmt`, `swift-format`, `clang-format`, `black` for others) and letting it own mechanical style so human attention goes to names and structure.
 
 ---
 
@@ -23,7 +23,7 @@ These are different jobs. Do not blur them.
 | **Formatter** (Prettier) | Mechanical style — anything with no semantic meaning | Quotes, semicolons, indent width, trailing commas, line width, argument wrapping, JSX layout |
 | **Linter** (ESLint) | Correctness and intent — things a human could get *wrong* | Unused variables, `no-floating-promises`, exhaustive `switch`, banned APIs, hook rules |
 
-Run Prettier for style and ESLint for bugs. Disable ESLint's stylistic rules so the two don't fight — the formatter wins every formatting question by definition.
+Run Prettier for style and ESLint for bugs. Disable ESLint's stylistic rules so the two don't fight. Once the repository has validated the formatter configuration for its language, the formatter owns those mechanical decisions.
 
 ---
 
@@ -83,8 +83,21 @@ Format-on-save keeps it pleasant; the CI check keeps it true.
 The single most common formatting clarity failure in review is hand-introducing the "default" style into a repo whose committed config says otherwise.
 
 - If the repo's `.prettierrc` says `semi: false, singleQuote: true`, then semicolon-less single-quoted code **is** the correct style there. Do not "fix" it toward Prettier's stock defaults.
-- The config file is the source of truth. When in doubt, run the formatter and accept its output — don't argue with it in a file.
+- The config file is the source of truth for the dialects it has been validated against. Accept isolated formatter output; when the same output repeatedly harms readability or macros, fix the configuration instead of hand-correcting each file.
 - Never reformat unrelated lines in a logic PR. If a file needs reformatting, do it in a separate, formatting-only commit so logic diffs stay legible.
+
+## Validate the configuration for the language
+
+A formatter is authoritative only after its configuration has been shown to produce maintainable code for the repository's language and dialect. Parser-backed does not mean universally readable or semantically risk-free.
+
+Objective-C is especially sensitive because long selectors, nested message sends, blocks, adjacent string literals, C declarations, and macros interact with generic C/C++ wrapping rules. Reject a configuration that routinely:
+
+- leaves `=`, `return`, a receiver such as `[NSError`, or a selector colon stranded on its own line;
+- turns each selector piece into a separate line when the complete statement is still readable;
+- rewrites or pads macro bodies and escaped newlines;
+- creates whole-file churn to satisfy a line-count or nominal width target.
+
+Fix the Objective-C-specific formatter configuration before changing source. Preserve intentionally vertical invariant lists, mapping tables, command templates, and low-level calls whose argument positions need auditing. For detailed Objective-C guidance, read [objective-c.md](objective-c.md).
 
 ---
 
@@ -114,6 +127,7 @@ The principle is not Prettier-specific; it is *defer mechanical style to a canon
 | TypeScript / JS / JSON / CSS / Markdown | **Prettier** | The reference case here |
 | Go | **gofmt** / **goimports** | Non-negotiable by community norm — there is no style debate in Go |
 | Swift | **swift-format** / SwiftFormat | Adopt one, commit its config, run in CI |
+| Objective-C / Objective-C++ | **clang-format** | Validate an Objective-C-specific style on messages, blocks, literals, and macros before repository-wide use |
 | Python | **Black** (+ isort/ruff) | "Any color you like, as long as it's black" — the same opinionated stance |
 | Rust | **rustfmt** | Same |
 
