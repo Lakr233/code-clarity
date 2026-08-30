@@ -35,7 +35,7 @@ When Objective-C wraps a C subsystem, keep policy in the Objective-C owner and l
 
 ## Format statements, not tokens
 
-Objective-C selectors are descriptive and can be long. Readability comes from seeing the operation and its meaningful groups, not from forcing every selector piece or argument onto a separate physical line.
+Objective-C selectors are descriptive and can be long. Readability comes from seeing the operation and its meaningful groups, not from forcing every selector piece or argument onto a separate physical line. Line width follows [formatting-consistency.md](formatting-consistency.md): a longer complete message is clearer than a short-column wrap.
 
 Keep an ordinary statement on one line when it remains locally readable:
 

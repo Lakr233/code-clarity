@@ -1,6 +1,6 @@
 ---
 name: code-clarity
-description: Write, review, and simplify Go, Swift, Objective-C, and TypeScript code so behavior has one owner, state is minimal and derivable, failures are grouped by real recovery behavior, APIs expose only necessary concepts, control flow stays flat, and tests protect observable outcomes without forcing production abstractions. Use when code grows through incremental feedback, a diff adds many states/errors/branches/types, naming or flow is hard to follow, Objective-C messages or declarations are mechanically over-wrapped, seams and mocks multiply, or a refactor should reduce concepts while preserving behavior and repository conventions.
+description: Write, review, and simplify Go, Swift, Objective-C, and TypeScript code so behavior has one owner, state is minimal and derivable, failures are grouped by real recovery behavior, APIs expose only necessary concepts, control flow stays flat, and tests protect observable outcomes without forcing production abstractions. Use when code grows through incremental feedback, a diff adds many states/errors/branches/types, naming or flow is hard to follow, calls, conditions, or declarations are mechanically wrapped to a column count, seams and mocks multiply, or a refactor should reduce concepts while preserving behavior and repository conventions.
 ---
 
 # Code Clarity
@@ -70,11 +70,13 @@ Keep the source of truth with its owner: interpret, validate, and derive a value
 
 Keep the happy path flat. Extract a function when it names a coherent operation or hides a lower abstraction level—not merely to reduce line count. Avoid pass-through methods whose only effect is to enlarge an interface.
 
+Keep a complete statement, call, or condition on one line when it remains locally readable. Prefer a longer comfortable line over wrapping every argument, label, or selector to a column count. Break at semantic groups only when the unwrapped form is actually hard to scan. For line width and formatter-owned style, read [references/formatting-consistency.md](references/formatting-consistency.md).
+
 Apply the language's own grain:
 
 - **Go:** Return concrete types and define small interfaces at the consumer. Create a sentinel or typed error only when callers use `errors.Is`/`errors.As` to choose different behavior; wrapping an error makes it API. Keep `context.Context` explicit and first. Handle errors before the normal path and avoid result structs that only rename a short, unambiguous return tuple.
 - **Swift:** Use structs for values and classes/actors for identity, resource ownership, or isolated mutation. Use an enum when cases are mutually exclusive and switched exhaustively; keep an independent binary fact as a boolean. Treat every `await` inside an actor as a point where assumptions may need revalidation. Use a protocol for a shared capability with real substitutes, a closure for one local operation that genuinely varies, and a concrete dependency when nothing varies.
-- **Objective-C:** Keep object, Core Foundation, file-descriptor, Mach-port, and allocation ownership explicit even under ARC. Prefer private class extensions over public surface expansion, categories only for cohesive capabilities, and one `NSError` path per caller recovery behavior. Keep ordinary assignments and message sends readable as statements rather than mechanically fragmenting every selector or argument. For the complete Objective-C review and formatting rules, read [references/objective-c.md](references/objective-c.md).
+- **Objective-C:** Keep object, Core Foundation, file-descriptor, Mach-port, and allocation ownership explicit even under ARC. Prefer private class extensions over public surface expansion, categories only for cohesive capabilities, and one `NSError` path per caller recovery behavior. For the complete Objective-C review and formatting rules, read [references/objective-c.md](references/objective-c.md).
 - **TypeScript:** Use a discriminated union only for variants consumers handle differently, and use `never` for exhaustive switches. Derive secondary values from one typed source instead of mirroring flags. Narrow or validate `unknown` input once at the boundary; do not repeatedly validate internal typed values. Use `satisfies` for complete mappings without widening useful inference.
 
 For naming, control flow, functions, files, and local style, load only the relevant existing references:

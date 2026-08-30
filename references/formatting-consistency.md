@@ -14,6 +14,31 @@ A formatter removes the entire category. Every file looks the same, so a diff sh
 
 ---
 
+## Prefer comfortable line width
+
+Line width is a wrap *target*, not a reason to fragment a readable statement by hand. Ordinary calls, conditions, labeled arguments, and assignments should stay on one line when that form is the easier scan.
+
+```swift
+// Prefer — one statement, one glance
+nsWindow.setValue(mask.uintValue | fullSizeContentViewMask, forKey: "styleMask")
+
+if nsWindow.responds(to: NSSelectorFromString("setTitlebarSeparatorStyle:")) {
+    nsWindow.setValue(titlebarSeparatorStyleNone, forKey: "titlebarSeparatorStyle")
+}
+
+// Avoid — wrapping to a column count
+nsWindow.setValue(
+    mask.uintValue | fullSizeContentViewMask,
+    forKey: "styleMask"
+)
+```
+
+Break a line only at a semantic group: a new clause in a condition, a nested literal, a trailing closure, or a parameter list that is actually hard to scan on one line. Do not put a single argument, label, operator, or opening delimiter on its own line just because the statement crossed 80 or 100 columns.
+
+80 columns is a historical terminal width, not a readability improvement. When choosing or reviewing a formatter `printWidth` / `ColumnLimit`, prefer a generous target such as `120` so ordinary application code stays intact. Match a committed repository config when one exists; if that config repeatedly fragments comfortable statements, fix the config rather than hand-wrapping each call.
+
+---
+
 ## What the formatter owns vs. what the linter owns
 
 These are different jobs. Do not blur them.
@@ -27,13 +52,13 @@ Run Prettier for style and ESLint for bugs. Disable ESLint's stylistic rules so 
 
 ---
 
-## Prettier's defaults are a fine baseline
+## Prettier's defaults are a fine baseline — except width
 
-Prettier is opinionated on purpose; its defaults are a reasonable house style for most TypeScript projects:
+Prettier is opinionated on purpose. Most of its defaults are a reasonable house style for TypeScript:
 
 | Option | Default | Effect |
 |--------|---------|--------|
-| `printWidth` | `80` | Wrap target; not a hard limit |
+| `printWidth` | `80` | Prettier's wrap target — too tight for most application code; override |
 | `tabWidth` | `2` | 2-space indent |
 | `semi` | `true` | Statement-terminating semicolons |
 | `singleQuote` | `false` | Double quotes |
@@ -41,15 +66,12 @@ Prettier is opinionated on purpose; its defaults are a reasonable house style fo
 | `arrowParens` | `'always'` | `(x) => x`, not `x => x` |
 | `bracketSpacing` | `true` | `{ foo }` not `{foo}` |
 
-You may override any of these — but only in a **committed `.prettierrc`**, applied by the tool, never by hand. The exact values matter far less than that there is exactly one set of them.
+Override `printWidth` as in Prefer comfortable line width. Leave the other defaults unless the repository already chose otherwise. Encode the choice in a **committed `.prettierrc`**, applied by the tool, never by hand.
 
 ```json
-// .prettierrc — example override set, then never formatted by hand again
+// .prettierrc — generous width, then never formatted by hand again
 {
-  "printWidth": 100,
-  "singleQuote": true,
-  "semi": false,
-  "trailingComma": "all"
+  "printWidth": 120
 }
 ```
 
@@ -83,6 +105,7 @@ Format-on-save keeps it pleasant; the CI check keeps it true.
 The single most common formatting clarity failure in review is hand-introducing the "default" style into a repo whose committed config says otherwise.
 
 - If the repo's `.prettierrc` says `semi: false, singleQuote: true`, then semicolon-less single-quoted code **is** the correct style there. Do not "fix" it toward Prettier's stock defaults.
+- Do not wrap files toward `printWidth` 80 because that is Prettier's stock default. If the repo has no committed width, write comfortable lines; when adding config, set `printWidth` to `120`.
 - The config file is the source of truth for the dialects it has been validated against. Accept isolated formatter output; when the same output repeatedly harms readability or macros, fix the configuration instead of hand-correcting each file.
 - Never reformat unrelated lines in a logic PR. If a file needs reformatting, do it in a separate, formatting-only commit so logic diffs stay legible.
 
@@ -90,14 +113,15 @@ The single most common formatting clarity failure in review is hand-introducing 
 
 A formatter is authoritative only after its configuration has been shown to produce maintainable code for the repository's language and dialect. Parser-backed does not mean universally readable or semantically risk-free.
 
-Objective-C is especially sensitive because long selectors, nested message sends, blocks, adjacent string literals, C declarations, and macros interact with generic C/C++ wrapping rules. Reject a configuration that routinely:
+Reject a configuration that routinely:
 
-- leaves `=`, `return`, a receiver such as `[NSError`, or a selector colon stranded on its own line;
-- turns each selector piece into a separate line when the complete statement is still readable;
-- rewrites or pads macro bodies and escaped newlines;
+- wraps each argument, label, or selector piece onto its own line when the complete statement is still readable;
+- leaves `=`, `return`, a receiver, or a label stranded on its own line;
 - creates whole-file churn to satisfy a line-count or nominal width target.
 
-Fix the Objective-C-specific formatter configuration before changing source. Preserve intentionally vertical invariant lists, mapping tables, command templates, and low-level calls whose argument positions need auditing. For detailed Objective-C guidance, read [objective-c.md](objective-c.md).
+Objective-C is especially sensitive because long selectors, nested message sends, blocks, adjacent string literals, C declarations, and macros interact with generic C/C++ wrapping rules. Also reject a configuration that rewrites or pads macro bodies and escaped newlines. For detailed Objective-C guidance, read [objective-c.md](objective-c.md).
+
+Fix the formatter configuration before changing source. Preserve intentionally vertical invariant lists, mapping tables, command templates, and low-level calls whose argument positions need auditing.
 
 ---
 
@@ -143,3 +167,5 @@ The principle is not Prettier-specific; it is *defer mechanical style to a canon
 | Contributors' editors format differently | Commit the config; enable format-on-save; add a `--check` CI gate |
 | Someone "fixed" a file toward stock defaults | Revert to the repo's `.prettierrc` — the config is the source of truth |
 | Hand-aligned code keeps breaking on edits | Let the formatter wrap; reserve `// prettier-ignore` for true tabular data |
+| Ordinary calls wrapped to ~80 columns | Keep the statement on one line; raise `printWidth` / `ColumnLimit` toward `120` |
+| Formatter repeatedly fragments comfortable calls | Fix the wrap target in config, not each call site |
