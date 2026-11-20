@@ -29,12 +29,13 @@ If the repository already has a consistent answer, preserve it unless it is crea
 
 Examples of repository-local patterns:
 
-- `Type+Feature.swift`
-- `Feature/Components/`
-- one cohesive subject per file, or one public type per file when that is the established convention
-- nested protocol definitions near the owning type
+- feature folders (`Invoicing/IssueInvoice.cs`) vs technical folders (`Controllers/`, `Services/`)
+- one type per file, or request + validator + handler colocated per use case
+- `XxxServiceCollectionExtensions` for DI registration per feature
+- EF Core `IEntityTypeConfiguration<T>` classes vs attributes on entities
+- test project layout mirroring the production folders
 
-If a codebase strongly prefers split extensions such as `+Delegate`, `+Layout`, and `+DataSource`, adding a new feature as a random inline block in the primary file reduces clarity even if the logic itself is clean.
+If a codebase consistently uses vertical slices with one file per use case, adding a new feature as a method on a shared `XxxService` reduces clarity even if the logic itself is clean.
 
 ### Naming vocabulary
 
@@ -42,15 +43,27 @@ Look for repeated suffixes and role words:
 
 - `Manager`
 - `Service`
-- `Coordinator`
+- `Handler`
 - `Store`
 - `Provider`
+- `Command` / `Query`
 
 Generic advice like “never use `Manager`” is weaker than repository-aware advice like “this repository uses `Manager` consistently for stateful coordination types, so keep the term unless the responsibility is actually unclear.”
 
 ### Control-flow style
 
-Some codebases read best when written as a flat sequence of `guard` exits. Others use symmetrical `if/else` branches intentionally. Match the dominant local style where it is already working well.
+Some codebases read best when written as a flat sequence of guard clauses. Others use symmetrical `if/else` branches intentionally. Match the dominant local style where it is already working well.
+
+### Error and validation style
+
+Look for the established answers before adding your own:
+
+- exceptions + ProblemDetails middleware, or a `Result` type, or both (and where each is used);
+- FluentValidation, DataAnnotations, or parsing in the handler;
+- `Debug.Assert`, a custom `Invariant`/`Guard` helper, or BCL throw helpers;
+- Moq vs NSubstitute vs hand-written fakes; xUnit vs NUnit vs MSTest.
+
+Introducing a second error model or validation library into a repository that already has one adds a concept every maintainer must learn.
 
 ### Comment and log tone
 
@@ -66,6 +79,8 @@ Logs can be:
 - short and lowercase
 - structured and machine-friendly
 - verbose and tutorial-like
+
+In .NET, also check whether logging uses `[LoggerMessage]` source generators or plain `ILogger` extension calls, and which structured property names are standard.
 
 New code should sound like it belongs.
 
@@ -89,11 +104,12 @@ This ordering matters. Local consistency should not preserve genuinely confusing
 
 | Situation | Repository-blind suggestion | Repository-aware suggestion |
 |----------|-----------------------------|-----------------------------|
-| Large UIKit controller | “Move everything into a view model” | If the repository uses MVC with `Type+Feature.swift`, extract by feature first and preserve the local architecture |
+| Large controller | “Introduce MediatR and CQRS” | If the repository uses plain application services, extract a focused service per use case and preserve the local architecture |
 | Stateful coordinator type | “Rename every `Manager` to `Service`” | Keep `Manager` if the repository uses it for mutable orchestration and the name is already well-understood |
-| UI layout | “Use constraints for every subview” | Preserve a mixed style if the project already uses Auto Layout for shells and manual frame layout for dynamic internals |
+| Interface per class | “Delete every single-implementation interface” | If the repository mandates `IFoo` for DI/mocking everywhere, flag the cost but don't remove them piecemeal in a feature PR |
+| Data access | “Wrap EF Core in a generic repository” | If the repository uses `DbContext` directly in handlers, keep doing so; add a specific repository only for real query policy |
 | Comments | “Add comments to every block” | Match the repository's comment density and keep comments focused on rationale |
-| Error handling | “Always avoid `fatalError`” | Respect intentional fail-fast invariants when the codebase uses them to protect impossible states |
+| Error handling | “Never throw, always return `Result`” | Respect the repository's split between exceptions and results; respect intentional fail-fast invariants (`UnreachableException`, `Debug.Assert`) protecting impossible states |
 
 ---
 

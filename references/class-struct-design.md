@@ -1,174 +1,111 @@
-# Class and Struct Design
+# Class, Record, and Struct Design
 
-Classes and structs are primary units of ownership. A well-designed type has a coherent responsibility, a name that reflects what it owns, and an interface smaller than the implementation it hides. A poorly designed type either accumulates unrelated responsibilities or is split into shallow wrappers that expose rather than contain complexity.
+Types are the primary units of ownership. A well-designed type has a coherent responsibility, a name that reflects what it owns, invariants it protects, and an interface smaller than the implementation it hides. A poorly designed type either accumulates unrelated responsibilities or is split into shallow wrappers that expose rather than contain complexity.
 
 ---
 
 ## Coherent Ownership
 
-**A type should own one coherent body of knowledge or lifecycle.** It can contain several steps and methods when keeping them together hides decisions from callers. Split when parts have independent owners, invariants, consumers, or reasons to change—not merely because a description contains “and.”
+**A type should own one coherent body of knowledge or lifecycle — and the invariants that come with it.** It can contain several steps when keeping them together hides decisions from callers. Split when parts have independent owners, invariants, consumers, or reasons to change — not merely because a description contains "and".
 
-The practical test: can callers understand the type through a small, stable interface without knowing its internal sequence?
+- ✅ `TokenRefresher` — refreshes expired authentication tokens
+- ✅ `InvoiceNumberGenerator` — issues gap-free invoice numbers per year
+- ❌ `UserManager` — authentication, profile updates, session state, and avatar uploads
 
-- ✅ `TokenRefresher` — "Refreshes expired authentication tokens"
-- ✅ `RequestThrottler` — "Throttles outgoing requests to stay within API rate limits"
-- ❌ `UserManager` — "Manages user authentication, profile updates, session state, and avatar uploads"
+A coordinator that owns one workflow may legitimately call several collaborators; do not replace it with a chain of one-method forwarding classes.
 
-The last example lists unrelated policy areas and is a likely split. A coordinator that owns one workflow may legitimately call several collaborators; do not replace it with a chain of one-method forwarding types.
+### The type guards its invariants
+
+If a rule must always hold for an object ("total equals sum of lines", "end ≥ start"), the type enforces it — through its constructor, private setters, and methods — so no caller can break it. Public setters on domain state move the invariant to every caller.
+
+```csharp
+// Avoid — every caller must remember the rule
+public class DateRange { public DateOnly Start { get; set; } public DateOnly End { get; set; } }
+
+// Prefer — the type cannot exist in an invalid form
+public readonly record struct DateRange
+{
+    public DateOnly Start { get; }
+    public DateOnly End { get; }
+
+    public DateRange(DateOnly start, DateOnly end)
+    {
+        if (end < start) throw new ArgumentException($"End {end} is before start {start}.");
+        (Start, End) = (start, end);
+    }
+
+    public int Days => End.DayNumber - Start.DayNumber + 1;
+}
+```
 
 ---
 
-## The Name Test
+## Choosing the kind of type
 
-The name is the first contract a type makes with the reader. Names that feel uncomfortable to write are diagnostic signals:
+### `record` / `readonly record struct` — values
 
-### Red Flag Names
+- Defined by contents, not identity; two equal instances are interchangeable.
+- Immutable; "modification" via `with` creates a new value.
+- `readonly record struct` for small values (IDs, money, coordinates, ranges); `record` (class) for larger values or when `default` would be a dangerous valid-looking instance.
 
-| Name pattern | Signal | Fix |
-|-------------|--------|-----|
-| `XxxManager` | Ownership may be unclear | Keep for an established lifecycle coordinator; otherwise name the owned role |
-| `XxxHelper` | Operation or subject may be unclear | Name the operation or subject when possible |
-| `XxxUtil` / `XxxUtils` | Bag of unrelated functions | Group by domain: `StringEncoding`, `ImageProcessing` |
-| `XxxService` (too broad) | Acceptable but often too vague | Be specific: `AuthenticationService` vs just `UserService` |
-| `XxxController` (outside MVC) | Fine in UIKit MVC, vague elsewhere | `CheckoutCoordinator`, `FormValidator` |
-| `XxxBase` | Premature inheritance hierarchy | Prefer protocols and composition |
-| `XxxCommon` | "Common to what?" | Name the concept that makes it common |
-| `XxxData` / `XxxInfo` | No behavioral identity | What kind of data? `UserProfile`, `SessionCredentials` |
-
-### Specific Names Scale Better
-
-Specific names have a natural "pull force" — they attract only what belongs, and resist additions that don't fit. `TokenRefresher` will never feel like the right place to add profile picture logic. `UserManager` has no such resistance.
-
----
-
-## Swift: Class vs Struct
-
-This is a design decision, not just a performance consideration.
-
-### Use `struct` when:
-
-- The type represents a **value** — something defined by its contents, not its identity
-- Copying the type creates an independent, interchangeable copy
-- The type has no lifecycle (no init/deinit side effects that must be balanced)
-- The type is inherently equatable by its contents
-
-```swift
-struct Coordinate {
-    let latitude: Double
-    let longitude: Double
-}
-
-struct Money {
-    let amount: Decimal
-    let currency: Currency
-}
-
-struct PriceBreakdown {
-    let subtotal: Decimal
-    let tax: Decimal
-    let discount: Decimal
-    var total: Decimal { subtotal + tax - discount }
-}
+```csharp
+public readonly record struct Money(decimal Amount, Currency Currency);
+public sealed record Address(string Street, string HouseNumber, string PostalCode, string City);
 ```
 
-Copying a `Money(amount: 10, currency: .usd)` and modifying the copy does not affect the original. This is the correct behavior — there is no "shared money object."
+### `sealed class` — identities and owners
 
-### Use `class` when:
+- Identity matters (an `Order` with id 42 is the same order even after changes).
+- Owns a lifecycle or resource (`IDisposable`, connections, subscriptions).
+- Mutable state shared by reference (a scoped unit of work, a cache).
 
-- The type represents an **identity** — something where two references might point to the same instance and you need to observe mutations
-- The type has a lifecycle that must be managed (connections, resources, subscriptions)
-- You need reference sharing (two parts of the system holding the same mutable object)
-- The type conforms to a protocol requiring `AnyObject`
+Seal by default. Inheritance is a public contract you must design for; unsealed classes invite it accidentally.
 
-```swift
-class UserSession {
-    var currentUser: User?
-    var authToken: String?
-    // Multiple parts of the app share one session
-}
+### EF Core entities
 
-class DatabaseConnection {
-    private let connection: OpaquePointer
-    deinit { sqlite3_close(connection) }  // lifecycle matters
-}
+Entities are identity types. Keep invariants in methods (`order.AddLine(...)`, `order.MarkPaid(...)`), use private setters, and a private parameterless constructor for EF. Do not expose `List<T>` navigation properties publicly; expose `IReadOnlyCollection<T>` backed by a private field.
 
-@Observable
-class DocumentListViewModel {
-    var documents: [Document] = []
-    var isLoading = false
-    // SwiftUI observes mutations on this shared reference
-}
-```
+### `struct` (non-record)
 
-### The `@Observable` consideration
-
-In modern Swift (iOS 17+, Swift 5.9+), `@Observable` requires `class`. This is a valid reason to use class for ViewModels and other state containers in SwiftUI:
-
-```swift
-@Observable
-class FeedViewModel {
-    var documents: [Document] = []
-    var isRefreshing = false
-    var errorMessage: String?
-}
-```
+Only for measured performance work (`Span`-heavy parsers, hot-path math). Mutable structs are a common source of bugs; make them `readonly`.
 
 ---
 
 ## Coupling and Cohesion
 
-### Low Coupling
+### Low coupling
 
-A type should communicate with as few other types as possible and pass minimal information across those connections. Each dependency is a reason a type might need to change for reasons outside its responsibility.
-
-```swift
-// High coupling — depends on many concrete types
-class CheckoutViewController: UIViewController {
-    let userService: UserService
-    let paymentService: PaymentService
-    let inventoryService: InventoryService
-    let analyticsService: AnalyticsService
-    let notificationService: NotificationService
-    let emailService: EmailService
-    // ...6 dependencies
-}
-
-// Lower coupling — depends on a single coordinator
-class CheckoutViewController: UIViewController {
-    let viewModel: CheckoutViewModel  // ViewModel handles all coordination
-}
+```csharp
+// High coupling — the constructor lists every subsystem
+public sealed class CheckoutController(
+    UserService users, PaymentService payments, InventoryService inventory,
+    AnalyticsService analytics, NotificationService notifications, EmailService email) { ... }
 ```
 
+Six dependencies in a controller usually means the use case is being orchestrated in the wrong layer. Move the workflow to one handler/service that owns it; the controller depends on that one thing.
+
 Reduce coupling by:
+
 - passing only the values or capabilities the type actually needs;
 - keeping a concrete dependency when behavior does not vary;
-- introducing a small consumer-owned protocol when a real substitute exists;
+- introducing a small consumer-owned interface when a real substitute exists;
 - grouping coordination only when it hides a stable workflow from callers.
 
-### High Cohesion
+### High cohesion
 
-Everything inside a type should be strongly related to its single responsibility. Methods that don't use `self`, properties that are only used by one method, functionality that belongs to a different domain — these are cohesion failures.
+Everything inside a type relates to its responsibility. Methods that don't use instance state, fields used by only one method, and presentation logic on domain types are cohesion failures.
 
-```swift
-// Low cohesion — string formatting method on a data type
-struct Order {
-    let id: String
-    let items: [OrderItem]
-    let total: Decimal
-
-    // This doesn't belong here — it's a presentation concern
-    func formattedReceiptHTML() -> String { ... }
+```csharp
+// Low cohesion — presentation on a domain entity
+public sealed class Invoice
+{
+    public string ToReceiptHtml() { ... }
 }
 
-// High cohesion — each type does its own thing
-struct Order {
-    let id: String
-    let items: [OrderItem]
-    let total: Decimal
-}
-
-class OrderReceiptFormatter {
-    func formatHTML(for order: Order) -> String { ... }
+// High cohesion — formatting lives in presentation
+public sealed class InvoiceReceiptRenderer
+{
+    public string RenderHtml(Invoice invoice) { ... }
 }
 ```
 
@@ -176,73 +113,61 @@ class OrderReceiptFormatter {
 
 ## Accumulation: The Most Common Design Failure
 
-Types rarely start with too many responsibilities. They accumulate them. A class that starts as `AuthService` gains password reset logic ("it's auth-related"), then account deletion ("users request it in auth flows"), then rate limiting ("it's part of security").
-
-Each addition feels locally justified. The result is a class with four responsibilities that none of them fit cleanly.
+Types rarely start with too many responsibilities; they accumulate them. `AuthService` gains password reset ("it's auth"), then account deletion ("users do it from settings"), then rate limiting ("it's security").
 
 ### Signs of accumulation
 
-- The class has methods that don't use many of the same properties as each other
-- The class imports many unrelated frameworks
-- The class is hard to test because each test requires setting up unrelated state
+- Methods that use disjoint sets of fields
+- Many unrelated `using` namespaces
+- Tests that require setting up unrelated dependencies (`Mock<T>` for six services to test one method)
 - PRs that "should be simple" always touch this class
-- New team members find the class confusing despite reading it carefully
+- A `partial class` used to hide size rather than to separate generated code
 
-### The split decision
+### Split by reason to change
 
-When splitting, organize by **reason to change**, not by type of code:
+```csharp
+// Wrong axis — split by kind of code
+public sealed class AuthServiceValidation { }
+public sealed class AuthServicePersistence { }
 
-```swift
-// Don't split by type of operation
-class AuthService_Validation { }    // wrong axis
-class AuthService_Persistence { }   // wrong axis
-
-// Split by reason to change
-class LoginService { }              // changes when login flow changes
-class TokenStore { }                // changes when token storage policy changes
-class PasswordResetService { }      // changes when password reset UX changes
+// Right axis — split by reason to change
+public sealed class LoginService { }
+public sealed class TokenStore { }
+public sealed class PasswordResetService { }
 ```
 
 ---
 
-## Protocol-Oriented Design in Swift
+## Interfaces
 
-Protocols define capability contracts. Use one when a consumer needs a stable subset of behavior with real substitutes. A protocol is not automatically clearer than a concrete type; every requirement expands all conformers and fakes.
+An interface defines a capability contract. Use one when a consumer needs a stable subset of behavior **with real substitutes** (multiple implementations, or a durable in-memory fake). An `IFoo` for every `Foo` is not "SOLID"; every member expands all implementations and fakes.
 
-```swift
-// Protocol defines what this type needs from the outside world
-protocol OrderRepository {
-    func fetch(id: String) async throws -> Order
-    func save(_ order: Order) async throws
+```csharp
+public interface IOrderRepository
+{
+    Task<Order?> FindAsync(OrderId id, CancellationToken ct);
+    Task SaveAsync(Order order, CancellationToken ct);
 }
 
-// Real substitutes justify the capability boundary
-class RemoteOrderRepository: OrderRepository { ... }
-class InMemoryOrderRepository: OrderRepository { }  // for tests
-
-// The class that uses it depends only on the protocol
-class CheckoutViewModel {
-    private let repository: any OrderRepository   // not the concrete type
-
-    init(repository: any OrderRepository) {
-        self.repository = repository
-    }
-}
+public sealed class EfOrderRepository(AppDbContext db) : IOrderRepository { ... }
+public sealed class InMemoryOrderRepository : IOrderRepository { ... }   // real fake for tests
 ```
 
-This pattern makes testing natural because the alternate implementation has coherent behavior. For one local operation, a closure may be smaller; with no variation, use the concrete type.
+For a single varying operation, a `Func<...>` parameter or `TimeProvider`-style abstraction may be smaller. With no variation, inject the concrete class.
+
+Avoid default interface methods for shared logic; they blur where behavior lives.
 
 ---
 
 ## Design Checklist
 
 | Question | Pass | Fail |
-|----------|------|------|
-| Does the type own one coherent body of knowledge or lifecycle? | Yes | Unrelated invariants and consumers accumulate together |
-| Does the name reveal that ownership in repository vocabulary? | Yes | The name forces readers to inspect implementation |
-| Does the type use `struct` for values and `class` for identities? | Yes | Classes used for pure data containers |
-| Do all methods use properties of the type? | Yes | Methods that don't touch `self` (free functions belong elsewhere) |
-| Does each dependency represent data or behavior the type genuinely needs? | Yes | Dependencies exist only for wiring or tests |
-| Would a split create deeper modules rather than pass-through wrappers? | Yes | The split only adds forwarding files and call hops |
-| Is the type easy to test without setting up unrelated state? | Yes | Complex setup required for simple tests |
-| Has the type grown by accumulation rather than design? | No | Each new "related feature" landed here |
+|---|---|---|
+| Does the type own one coherent body of knowledge or lifecycle? | Yes | Unrelated invariants and consumers accumulate |
+| Does the type enforce its own invariants? | Constructor + methods guard them | Public setters; callers must remember rules |
+| Does the name reveal that ownership in repository vocabulary? | Yes | Readers must inspect the implementation |
+| `record`/struct for values, `sealed class` for identities? | Yes | Mutable classes as pure data bags |
+| Do all methods use the type's state? | Yes | Static-like methods living on an instance |
+| Does each dependency represent something the type genuinely needs? | Yes | Dependencies exist only for wiring or mocks |
+| Would a split create deeper modules rather than pass-through wrappers? | Yes | The split only adds forwarding classes |
+| Is the type easy to test without unrelated setup? | Yes | Many mocks for one behavior |

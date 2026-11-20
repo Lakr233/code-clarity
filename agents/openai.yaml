@@ -1,7 +1,7 @@
 interface:
-  display_name: "Code Clarity"
-  short_description: "Reduce state, branches, errors, and seams safely"
-  default_prompt: "Use $code-clarity to simplify this change by removing unnecessary state, errors, branches, and abstractions while preserving behavior."
+  display_name: "Code Clarity (C#)"
+  short_description: "Reduce state, branches, exceptions, and seams in C#; assert invariants"
+  default_prompt: "Use $code-clarity to simplify this C# change by removing unnecessary state, exceptions, branches, interfaces, and abstractions, making illegal states unrepresentable, and asserting invariants while preserving behavior."
 
 policy:
   allow_implicit_invocation: true

@@ -1,174 +1,95 @@
 # Early Return and Guard Clauses
 
-The early return pattern — also known as guard clauses or the bouncer pattern — is the practice of handling preconditions, edge cases, and error conditions at the top of a function with an immediate return, so the function's main logic runs at the base indentation level, unobstructed.
-
-This is idiomatic in both Go and Swift, and represents the same underlying philosophy in both languages.
+Handle preconditions, edge cases, and error conditions at the top of a method with an immediate `return` or `throw`, so the main logic runs at base indentation. Guards are the runtime front line of [negative space programming](negative-space-programming.md): they state what the method refuses before it states what it does.
 
 ## The Core Problem: Arrow Code
 
-Deeply nested conditionals create "arrow code" — the indented shape of the code forms an arrow pointing right. Each level of nesting forces the reader to maintain a mental stack of active conditions.
-
-```swift
+```csharp
 // Arrow code — avoid
-func processOrder(_ order: Order?) {
-    if let order = order {
-        if order.isValid {
-            if currentUser.canPlaceOrders {
-                if inventory.has(order.items) {
-                    // main logic buried 4 levels deep
-                    charge(order)
-                } else {
-                    showOutOfStock()
+public IResult PlaceOrder(Order? order)
+{
+    if (order != null)
+    {
+        if (order.IsValid)
+        {
+            if (_currentUser.CanPlaceOrders)
+            {
+                if (_inventory.Has(order.Items))
+                {
+                    Charge(order);           // main logic buried 4 levels deep
+                    return Results.Ok();
                 }
-            } else {
-                showPermissionError()
+                else return Results.Conflict("Out of stock");
             }
-        } else {
-            showValidationError()
+            else return Results.Forbid();
         }
+        else return Results.BadRequest();
     }
+    return Results.BadRequest();
 }
 ```
-
-The main logic (`charge(order)`) is 4 levels deep. The reader must hold all four conditions in mind simultaneously to understand the code.
 
 ## The Solution: Exit Early, Stay Flat
 
-```swift
-// Early return — prefer
-func processOrder(_ order: Order?) {
-    guard let order else { return }
-    guard order.isValid else { showValidationError(); return }
-    guard currentUser.canPlaceOrders else { showPermissionError(); return }
-    guard inventory.has(order.items) else { showOutOfStock(); return }
+```csharp
+public IResult PlaceOrder(Order? order)
+{
+    if (order is null) return Results.BadRequest();
+    if (!order.IsValid) return Results.BadRequest();
+    if (!_currentUser.CanPlaceOrders) return Results.Forbid();
+    if (!_inventory.Has(order.Items)) return Results.Conflict("Out of stock");
 
-    // main logic at base level
-    charge(order)
+    Charge(order);
+    return Results.Ok();
 }
 ```
 
-The reader can scan the guards linearly, and the main logic is immediately visible at the base level. Each guard is a complete thought that can be read and dismissed.
+Each guard is a complete thought that can be read and dismissed. After `if (order is null) return ...;` the compiler's flow analysis knows `order` is non-null for the rest of the method.
 
 ---
 
-## Swift: `guard` Statements
+## C# guard tools
 
-Swift's `guard` statement is a first-class language construct for early return. It was designed specifically for this pattern.
+### BCL throw helpers for contract violations
 
-### Basic guard
+```csharp
+public void Schedule(Appointment appointment, TimeSpan duration)
+{
+    ArgumentNullException.ThrowIfNull(appointment);
+    ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(duration, TimeSpan.Zero);
 
-```swift
-guard condition else { return }
-guard condition else { throw SomeError.reason }
-```
-
-### guard let / guard var
-
-Unwrap optionals and bind them for the rest of the scope:
-
-```swift
-func displayProfile(for userId: String?) {
-    guard let userId else { return }          // userId is now String, not String?
-    guard let user = users[userId] else {
-        showUserNotFound()
-        return
-    }
-
-    // userId and user are both available and non-optional here
-    render(user)
+    // ...
 }
 ```
 
-### guard with multiple conditions
+### Pattern-based guards that bind
 
-Chain conditions in a single guard to reduce visual noise:
+```csharp
+if (await _db.Customers.FindAsync([id], ct) is not { } customer)
+    return Results.NotFound();
 
-```swift
-guard
-    let user = currentUser,
-    user.isActive,
-    user.hasCompletedOnboarding
-else {
-    redirectToOnboarding()
-    return
-}
+if (customer is not { IsActive: true, Subscription: { } subscription })
+    return Results.Problem("Customer has no active subscription");
 
-// user is available, active, and onboarded here
-loadDashboard(for: user)
+// customer and subscription are non-null here
 ```
 
-### guard in async context
+### `TryX` guards
 
-```swift
-func fetchAndDisplay(id: String) async {
-    guard !id.isEmpty else { return }
-
-    do {
-        let user = try await userRepository.fetch(id: id)
-        guard user.isActive else {
-            await MainActor.run { showDeactivatedNotice() }
-            return
-        }
-        await MainActor.run { render(user) }
-    } catch {
-        await MainActor.run { showError(error) }
-    }
-}
+```csharp
+if (!EmailAddress.TryParse(request.Email, out var email))
+    return Results.ValidationProblem(...);
 ```
 
----
+### `continue` in loops
 
-## Go: Idiomatic Early Return
+```csharp
+foreach (var line in lines)
+{
+    if (line.Quantity == 0) continue;
+    if (line.IsGift) continue;
 
-Go's convention of returning `(value, error)` pairs combined with `if err != nil { return }` achieves the same pattern:
-
-```go
-// Go idiomatic early return
-func processOrder(orderID string) error {
-    if orderID == "" {
-        return errors.New("orderID cannot be empty")
-    }
-
-    order, err := fetchOrder(orderID)
-    if err != nil {
-        return fmt.Errorf("fetch order: %w", err)
-    }
-
-    if !order.IsValid() {
-        return ErrInvalidOrder
-    }
-
-    if err := chargeCard(order); err != nil {
-        return fmt.Errorf("charge card: %w", err)
-    }
-
-    return nil
-}
-```
-
-Each error case is handled immediately and the function exits. The reader never needs to track "what happens if fetch fails?" — it returned. The success path is at the base indentation level.
-
----
-
-## TypeScript: Early Return Pattern
-
-```typescript
-// TypeScript — same philosophy
-async function processOrder(orderId: string | null): Promise<void> {
-    if (!orderId) return;
-
-    const order = await fetchOrder(orderId);
-    if (!order) {
-        showOrderNotFound();
-        return;
-    }
-
-    if (!order.isValid) {
-        showValidationError();
-        return;
-    }
-
-    await chargeCard(order);
+    total += line.Price * line.Quantity;
 }
 ```
 
@@ -176,101 +97,67 @@ async function processOrder(orderId: string | null): Promise<void> {
 
 ## The `else` After `return` Anti-Pattern
 
-Once a block ends with `return`, `throw`, or `continue`, the `else` branch is redundant. It adds visual indentation without adding logic.
-
-```swift
+```csharp
 // Redundant else — avoid
-func label(for status: Status) -> String {
-    if status == .active {
-        return "Active"
-    } else {
-        return "Inactive"
-    }
+string Label(Status status)
+{
+    if (status == Status.Active) { return "Active"; }
+    else { return "Inactive"; }
 }
 
-// Remove the else — prefer
-func label(for status: Status) -> String {
-    if status == .active {
-        return "Active"
-    }
-    return "Inactive"
-}
+// Prefer — or a switch expression when there are more cases
+string Label(Status status) => status == Status.Active ? "Active" : "Inactive";
 ```
-
-This applies recursively: if every branch of an if-else returns, rewrite as sequential guards.
 
 ---
 
 ## When NOT to Use Early Return
 
-Early return is not always the right choice. Use judgment:
-
 ### Don't force asymmetry
 
-If two branches are genuinely equal in importance and neither is a "failure case", an if-else communicates parity clearly:
+If two branches are equally valid outcomes, `if/else` (or a ternary / switch expression) communicates parity:
 
-```swift
-// This is fine — both branches are valid outcomes of equal weight
-if user.isPremium {
-    showPremiumDashboard()
-} else {
-    showFreeDashboard()
+```csharp
+var view = user.IsPremium ? RenderPremiumDashboard() : RenderFreeDashboard();
+```
+
+### Don't chain tiny guards for trivial logic
+
+```csharp
+if (isReady && hasData) DisplayContent();
+```
+
+### Resources requiring cleanup
+
+Use `using`/`await using` declarations and `try/finally` so early returns cannot skip cleanup:
+
+```csharp
+public async Task<byte[]> ReadSmallFileAsync(string path, CancellationToken ct)
+{
+    await using var stream = File.OpenRead(path);
+    if (stream.Length > MaxFileSize) throw new InvalidDataException("File too large");
+
+    var buffer = new byte[stream.Length];
+    await stream.ReadExactlyAsync(buffer, ct);
+    return buffer;
 }
 ```
 
-Forcing one branch into an early return would make it look like an error case.
+### Guards are not a substitute for types
 
-### Don't chain many tiny guards for simple logic
-
-If all you need is a two-condition check before a single line of logic, an `if` with a compound condition reads fine:
-
-```swift
-// Acceptable for simple cases
-if isReady && hasData {
-    displayContent()
-}
-
-// Over-engineered early return
-guard isReady else { return }
-guard hasData else { return }
-displayContent()
-```
-
-### Nested resources requiring cleanup
-
-If early return would skip important cleanup (resource release, deferred work), use `defer` in Swift/Go, or restructure:
-
-```swift
-func readFile(at path: String) throws -> Data {
-    let file = try openFile(at: path)
-    defer { file.close() }  // always runs, even on early return
-
-    guard file.size < maxFileSize else { throw FileError.tooLarge }
-    return try file.readAll()
-}
-```
+A method that starts with eight guards on primitives is a sign that a parsed type is missing. Move the guards into a value object's constructor once (see [parse-dont-validate.md](parse-dont-validate.md)).
 
 ---
 
 ## Decision Guide
 
 | Condition | Pattern |
-|-----------|---------|
-| Nil check / optional unwrap | `guard let x else { return }` |
-| Precondition (function can't proceed) | `guard condition else { return }` |
-| Error from async operation | `guard let result, error == nil else { handle(error); return }` |
-| Two branches of equal importance | `if / else` |
-| Complex multi-path logic | Consider breaking into smaller functions first |
-| Resource cleanup required | `defer` + early return |
-
----
-
-## Swift vs Go Comparison
-
-| Scenario | Swift | Go |
-|----------|-------|-----|
-| Nil / missing value | `guard let x else { return }` | `if x == nil { return ErrMissing }` |
-| Precondition check | `guard isValid else { return }` | `if !isValid { return ErrInvalid }` |
-| Error from call | `let x = try call()` + `catch` | `x, err := call(); if err != nil { return err }` |
-| Bind for scope | `guard let x else { return }` (x available below) | `x, err := ...; if err != nil { return }` (x available below) |
-| Multiple conditions | `guard a, b, c else { return }` | Sequential `if` blocks |
+|---|---|
+| Null argument on public API | `ArgumentNullException.ThrowIfNull(x);` |
+| Out-of-range argument | `ArgumentOutOfRangeException.ThrowIfXxx(...)` |
+| Object in wrong state | `if (...) throw new InvalidOperationException(...)` |
+| Lookup may miss, caller handles it | `if (... is not { } x) return NotFound;` |
+| Untrusted input | `TryParse` guard → validation response |
+| Internal invariant | `Debug.Assert(...)` (not a guard) |
+| Two equally valid outcomes | ternary / `switch` expression / `if-else` |
+| Cleanup required | `using` declaration + early return |
