@@ -1,8 +1,6 @@
 # File Organization and Named Constants
 
-Two decisions shape a codebase's readability before a reader looks at a single function: **how code is split into files**, and **how fixed values are named and scoped**. Both are about making the file tree and the top of each file act as documentation. This reference covers cohesive modules and the module-level constant pattern.
-
-The examples below use a neutral, illustrative desktop-app domain (documents, uploads, settings); apply the same shapes to your own domain.
+Two decisions shape readability before a reader looks at a single method: **how code is split into files and folders**, and **how fixed values are named and scoped**.
 
 ---
 
@@ -10,189 +8,115 @@ The examples below use a neutral, illustrative desktop-app domain (documents, up
 
 ### The rule
 
-**A file should have one discoverable subject, and its filename should name that subject.** A file may contain several exports when they form one API, change together, and are normally understood together. The file tree should remain a table of contents rather than a collection of arbitrary grab-bags.
+**A file has one discoverable subject, and its filename names that subject.** In C# the default is one top-level type per file, named after the type (`InvoiceService.cs`). StyleCop SA1402/SA1649 enforce this; follow the repository if it does.
 
-Common reasons to co-locate declarations:
+Legitimate exceptions — co-locate when the declarations form one concept and change together:
 
-- a public type and the small values/functions that constitute its API;
-- a schema and the type inferred from it;
-- a discriminated union and its exhaustive helpers;
-- private implementation used only by the subject;
-- declarations that always change in the same commits for the same reason.
+- a closed record hierarchy (`PaymentState` + its nested sealed records);
+- a request record and its validator, if the repository colocates them;
+- a small private nested type used only by its owner;
+- a generic and non-generic pair (`Result.cs` with `Result` and `Result<T>`), using `Result{T}.cs` naming only if that is the house style.
 
-Split when a declaration has independent consumers, independent reasons to change, or makes the filename misleading. Do not split merely to satisfy one-type-per-file style; excessive splitting makes readers traverse shallow files to understand one concept.
+Split when a declaration has independent consumers or reasons to change. Do not split a type across `partial` files merely to hide its size — that is accumulation in disguise. `partial` is for generated code (source generators, designers, `[GeneratedRegex]`, `[LoggerMessage]`).
 
-### Why it works
+### Namespaces mirror folders
 
-| Benefit | Mechanism |
-|---------|-----------|
-| The tree is navigable | Filename = symbol name, so search-by-file works |
-| Diffs are scoped | A change to one concept touches one file |
-| Merge conflicts shrink | Two people editing two classes edit two files |
-| Files resist growth | A file named `slug-sanitizer.ts` rejects unrelated additions; `utils.ts` invites them |
-| Imports read as a dependency list | `import { WindowManager } from './window-manager'` says where it lives |
+Use file-scoped namespaces (`namespace Acme.Invoicing;`) and keep namespace = project root namespace + folder path. A namespace that does not match the folder makes "where is this type?" unanswerable. IDE0130 enforces it.
 
-The "pull force" of a specific filename is the same effect as a specific type name: `date-formatting.ts` will never feel like the right home for retry logic.
-
-### File naming conventions
-
-Follow the repository's established convention and make new filenames predictable. Two common, internally consistent schemes are:
-
-| File kind | Convention | Examples |
-|-----------|-----------|----------|
-| Logic / utility / service module | **kebab-case** | `document-store.ts`, `slug-sanitizer.ts`, `upload-queue.ts`, `endpoint-validation.ts` |
-| React component file | **PascalCase**, matching the component | `DocumentCard.tsx`, `App.tsx`, `SettingsPanel.tsx` |
-| Abstract contract / interface | kebab-case with a clear suffix | `payment-gateway-interface.ts`, `download-manager-interface.ts` |
-| Closely-related satellite of a component | component name + dotted concern | `DocumentCard.toolbar.ts` next to `DocumentCard.tsx` |
-| Barrel / re-export | `index.ts` | `packages/shared/src/documents/index.ts` |
-
-Swift analog: name the file after the owning type or feature. Keep tightly coupled support types nearby; use `Type+Feature.swift` when an extension is independently navigable and the repository already follows that pattern.
-
-Avoid: camelCase filenames, plural grab-bag names (`managers.ts`, `helpers.ts`, `utils.ts`, `types.ts` as a dumping ground), and files whose name doesn't appear as an export.
-
-### Folder organization: domain folders, flat files
-
-Group by **domain**, then keep files flat inside the folder. Depth comes from domains, not from nesting files five levels deep.
+### Folder organization: by feature, not by kind
 
 ```
 src/
-  main/
-    window-manager.ts
-    download-manager.ts
-    handlers/                 ← domain folder
-      index.ts                ← barrel: registerAllHandlers()
-      system.ts
-      documents.ts
-      service-context.ts      ← the dependency-bag type, one export
-  shared/
-    documents/
-      index.ts                ← barrel
-      storage.ts
-      upload-queue.ts
-      types.ts
-  renderer/
-    components/
-      app-shell/
-        DocumentCard.tsx
-        DocumentCard.toolbar.ts
+  Acme.Billing/
+    Invoicing/                     ← feature folder
+      Invoice.cs
+      InvoiceLine.cs
+      InvoiceId.cs
+      IssueInvoice.cs              ← endpoint/handler for one use case
+      InvoiceNumberGenerator.cs
+      InvoicingServiceCollectionExtensions.cs
+    Payments/
+      Payment.cs
+      PaymentState.cs
+      CapturePayment.cs
+    Infrastructure/
+      AppDbContext.cs
+      Configurations/
+        InvoiceConfiguration.cs
+  Acme.Billing.Tests/
+    Invoicing/
+      InvoiceTests.cs
+      IssueInvoiceTests.cs
 ```
 
-### Barrels are tables of contents, not code
+Prefer feature folders (vertical slices) over technical folders (`Controllers/`, `Services/`, `Repositories/`, `Models/`, `Interfaces/`). With technical folders, one change touches five folders, and `Services/` becomes a grab-bag. Follow the repository's existing structure if it is consistent; do not reorganize as part of a behavior change.
 
-An `index.ts` barrel should make the public surface easy to inspect. Prefer re-exports only; keep a tiny registration/composition function there only when the repository consistently treats the index as that folder's entry point.
+Avoid `Helpers/`, `Utils/`, `Common/`, `Shared/` folders that collect unrelated code. Name by subject.
 
-```ts
-// Good — explicit, visible surface
-export { loadDocument, saveDocument } from './storage'
-export { UploadQueue } from './upload-queue'
-export type { Document, PersistedField } from './types'
+### Projects are boundaries, not folders
 
-// Avoid — blanket re-export hides what is public and what is internal
-export * from './storage'
-export * from './upload-queue'
-export * from './types'
-```
-
-Explicit re-exports make the package's API reviewable in one glance and stop internal helpers from leaking out by accident. A single `export *` at the root of a deliberately-shallow package (e.g. a `core` package) is an acceptable exception when the whole package *is* the public surface.
-
-### When one file legitimately holds several exports
-
-- A **discriminated union** plus its small type-guard helpers (`isLoaded`, `isFailed`) — they are one concept.
-- A **zod schema** plus its inferred type (`export const FooSchema` + `export type Foo = z.infer<typeof FooSchema>`).
-- A set of **free functions on one subject** (`date-formatting.ts` with `formatRelative`, `formatRange`) — cohesive, not a grab-bag.
-- A component plus its **props interface** and private subcomponents used nowhere else.
-
-The test is cohesion: would a reader expect to find all of these by opening this filename? If yes, keep them together. If one is a surprise, split it.
+Create a separate project (`.csproj`) only for a real boundary: a deployable unit, a reusable package, or an enforced dependency rule (domain must not reference infrastructure). Ten projects for a small API add build time and navigation cost without adding clarity. Use `internal` + `InternalsVisibleTo` for tests rather than making everything `public`.
 
 ### Diagnostic
 
 | Symptom | Fix |
-|---------|-----|
-| File needs a banner comment to separate two exports | Split into two files |
-| Filename is plural and generic (`managers.ts`) | Rename around the cohesive subject or split unrelated declarations |
-| You can't predict the filename from the symbol you want | Rename file to its primary export |
-| Barrel uses `export *` and you can't tell what's public | Convert to explicit named re-exports |
-| A "helper" file keeps absorbing unrelated functions | Name files by subject so each resists drift |
+|---|---|
+| File name doesn't match its type | Rename file |
+| Namespace doesn't match folder | Align namespace (IDE0130) |
+| Several unrelated types in one file | Split per type |
+| `partial` used to hide a large class | Split by reason to change |
+| `Helpers.cs` / `Utils/` keeps growing | Name files by subject; move members to their owners |
+| One feature change touches `Controllers/`, `Services/`, `Repositories/`, `Models/` | Consider feature folders for new code |
+| Everything `public` in an application project | Default to `internal`; expose deliberately |
 
 ---
 
-## Part 2 — Named Constants (the `fileprivate let` pattern)
+## Part 2 — Named Constants
 
-A literal with meaning — a timeout, a retry ceiling, a path, a wire string, a debounce — should be a **named constant, hoisted to the top of its file, at the narrowest scope that serves its readers.** This is the same instinct as Swift's `private`/`fileprivate let`: give the value a name and keep it from leaking.
+A literal with meaning — a timeout, a retry ceiling, a limit, a route, a header name — is a **named constant at the narrowest scope that serves its readers**, declared at the top of its type.
 
-### Why hoist and name
+```csharp
+public sealed class ImportJob
+{
+    private const int MaxBatchSize = 1_000;
+    private const int MaxRetryCount = 3;
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
 
-- `0.3` is a mystery; `animationSettleDuration` is documentation.
-- A hoisted constant centralizes the value — a change happens in one place, not at three scattered call sites.
-- Scoping it (file-private) keeps it out of the package's public API where it would become an accidental contract.
-
-### TypeScript
-
-Use the repository's constant naming convention. Keep module constants above their readers and unexported unless genuinely shared; many TypeScript repositories use `camelCase`, while others reserve `SCREAMING_SNAKE_CASE` for process-wide or protocol constants.
-
-```ts
-// module top — file-private by default (no `export`)
-const MAX_LOG_AGE_MS = 24 * 60 * 60 * 1000
-const CONFIG_CACHE_TTL_MS = 100
-const DEBOUNCE_MS = 100
-
-// Compose from constants so the relationship stays visible
-const META_DEBOUNCE_MS = process.platform === 'win32' ? 300 : DEBOUNCE_MS
-
-function writeLog(entry: LogEntry) {
-  if (Date.now() - entry.createdAt > MAX_LOG_AGE_MS) return
-  // ...
+    // ...
 }
 ```
 
-Rules of thumb:
+### Rules
 
-- **Don't `export` a constant only this file uses.** An un-exported `const` is module-private — that is the `fileprivate` you want. Export only when the value is a shared contract.
-- **Name a literal when the name carries domain meaning, centralizes a shared contract, or prevents inconsistent edits.** Repetition alone is not enough; obvious local values can remain inline.
-- Keep the constant at the lowest scope covering its readers: function-local if one function uses it, module-private if the file uses it, exported only if shared.
+- `const` for primitives and strings known at compile time; `static readonly` for `TimeSpan`, `Uri`, arrays, and objects.
+- Scope: method-local `const` → `private` → `internal` → `public`. Don't make a constant `public` only because it's convenient.
+- `public const` values are copied into consuming assemblies at compile time. For public values that might change, use `public static readonly`.
+- Use digit separators (`1_000_000`) and real units (`TimeSpan.FromMinutes(5)`, not `300000`).
+- Name a literal when the name carries domain meaning, centralizes a shared contract, or prevents inconsistent edits. Obvious local values (`0`, `1`, `string.Empty`) stay inline.
+- Bounds are negative space: every named `MaxXxx` should be checked somewhere (see [negative-space-programming.md](negative-space-programming.md)).
 
-### `as const` for fixed maps and tuples
+### Registries for wire strings
 
-Lock registries and option sets with `as const` so TypeScript narrows to literal types — typos become compile errors and types can be derived from the data:
+Routes, header names, claim types, queue names, and cache keys that appear in several places belong in one static class:
 
-```ts
-// Wire-protocol registry: one source of truth, literal-typed
-export const IPC_CHANNELS = {
-  documents: { GET: 'documents:get', CREATE: 'documents:create' },
-  window: { CLOSE: 'window:close', FOCUS_STATE: 'window:focusState' },
-} as const
-// IPC_CHANNELS.documents.GET has type 'documents:get', not string
-
-// Derive a type from the data instead of restating it
-const PERSISTED_FIELDS = ['id', 'title', 'updatedAt'] as const
-type PersistedField = (typeof PERSISTED_FIELDS)[number]
-// 'id' | 'title' | 'updatedAt'
-```
-
-This is the TypeScript form of a frozen enum: one declaration drives both the runtime values and the compile-time type, so they cannot drift.
-
-### Swift
-
-```swift
-// File-private constants, scoped deliberately
-private let maxRetryCount = 3
-private let settleDelay: TimeInterval = 0.3
-
-// Group related design constants in a namespacing enum
-private enum Layout {
-    static let cardSpacing: CGFloat = 12
-    static let cornerRadius: CGFloat = 8
+```csharp
+internal static class Headers
+{
+    public const string CorrelationId = "X-Correlation-Id";
+    public const string IdempotencyKey = "Idempotency-Key";
 }
 ```
 
-Use `private` / `fileprivate` on purpose. A constant only one type needs should not be `internal`, where it becomes part of the module's surface.
+### Configuration vs constant
+
+If the value differs per environment or should be tunable without a deploy, it is configuration (`IOptions<T>` with validation), not a constant. If it is a law of the domain (VAT digits, max invoice lines per spec), it is a constant.
 
 ### Diagnostic
 
 | Symptom | Fix |
-|---------|-----|
-| Bare number/string at a call site with non-obvious meaning | Hoist to a named top-of-file constant |
-| Same literal in multiple places | Single named constant; one source of truth |
-| `export const` used by only this file | Drop `export` — make it file-private |
-| A `string[]` of names also restated as a union type | `const NAMES = [...] as const; type Name = typeof NAMES[number]` |
-| Magic wire strings sprinkled through IPC/HTTP code | One `as const` channel/route registry, referenced everywhere |
+|---|---|
+| Bare number/string with non-obvious meaning | Named constant at top of type |
+| Same literal in multiple places | One constant; one source of truth |
+| `public const` used by one class | Make it `private` |
+| `TimeSpan` built from raw milliseconds | `TimeSpan.FromSeconds(...)` in a `static readonly` |
+| Environment-specific value as constant | Move to `IOptions<T>` |

@@ -1,171 +1,148 @@
-# Formatting Consistency: The Prettier Pattern
+# Formatting Consistency: Let the Tool Own Mechanical Style
 
-Mechanical style — indentation, quotes, semicolons, trailing commas, line width, import wrapping — is a clarity concern, but it is the one concern that should be decided **once, by a repository-owned tool and reviewed configuration**, and then rarely revisited. This reference is about adopting an opinionated formatter (Prettier for the JS/TS world; `gofmt`, `swift-format`, `clang-format`, `black` for others) and letting it own mechanical style so human attention goes to names and structure.
+Mechanical style — indentation, braces, `var` usage, `using` placement, line width, wrapping — is a clarity concern, but it should be decided **once, in a committed configuration enforced by a tool**, and then rarely revisited. Human attention goes to names and structure.
 
 ---
 
 ## The core idea
 
-Inconsistent mechanical style is noise. The eye trips on a stray single-quote-where-everything-else-is-double exactly the way it trips on a misleading name. Worse, hand-formatting pollutes diffs: a one-line logic change arrives wrapped in forty lines of reflow, and the reviewer can no longer see what actually changed.
+Inconsistent mechanical style is noise, and hand-formatting pollutes diffs: a one-line logic change arrives wrapped in forty lines of reflow, and the reviewer can no longer see what changed.
 
-A formatter removes the entire category. Every file looks the same, so a diff shows only genuine changes, and code review never spends a sentence on whitespace.
+**The stance:** stop debating style, encode it in config, run it on save and in CI.
 
-**The Prettier philosophy, stated plainly:** stop debating style, encode it in a config, run it on save and in CI. Style stops being a per-file decision and becomes invisible infrastructure.
+---
+
+## The .NET toolchain
+
+| Tool | Owns | Notes |
+|---|---|---|
+| **`.editorconfig`** | The single source of truth for C# style and analyzer severities | Commit at repo root; IDE, `dotnet format`, and build all read it |
+| **`dotnet format`** | Applies `.editorconfig` whitespace + code-style + analyzer fixes | Built into the SDK; `dotnet format --verify-no-changes` for CI |
+| **CSharpier** (optional) | Opinionated Prettier-like formatter for C# | Use *instead of* `dotnet format whitespace` if the repo adopts it; don't run both on whitespace |
+| **Roslyn analyzers / StyleCop.Analyzers** | Correctness and intent | Severity in `.editorconfig`; build fails on errors |
+
+Formatter vs analyzer: the formatter owns things with no semantic meaning (whitespace, braces, wrapping); analyzers own things a human can get wrong (unused variables, non-exhaustive switches, unforwarded `CancellationToken`). Don't use review comments for either.
+
+---
+
+## A baseline `.editorconfig`
+
+```ini
+root = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+max_line_length = 140              # CSharpier: printWidth; a wrap target, not a hard wall
+insert_final_newline = true
+
+csharp_style_namespace_declarations = file_scoped:error
+csharp_using_directive_placement = outside_namespace:warning
+dotnet_sort_system_directives_first = true
+
+csharp_prefer_braces = true:warning
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_prefer_switch_expression = true:suggestion
+csharp_style_prefer_pattern_matching = true:suggestion
+
+dotnet_style_readonly_field = true:warning
+dotnet_diagnostic.IDE0005.severity = warning     # unnecessary using
+dotnet_diagnostic.CS8509.severity = error        # non-exhaustive switch
+dotnet_diagnostic.CA2016.severity = warning      # forward CancellationToken
+
+# Private fields: _camelCase
+dotnet_naming_rule.private_fields.symbols = private_fields
+dotnet_naming_rule.private_fields.style = underscore_camel
+dotnet_naming_rule.private_fields.severity = warning
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+dotnet_naming_style.underscore_camel.required_prefix = _
+```
+
+Adapt to the repository; if it already has an `.editorconfig`, that file wins.
 
 ---
 
 ## Prefer comfortable line width
 
-Line width is a wrap *target*, not a reason to fragment a readable statement by hand. Ordinary calls, conditions, labeled arguments, and assignments should stay on one line when that form is the easier scan.
+Line width is a wrap *target*, not a reason to fragment a readable statement by hand. Ordinary calls, conditions, and assignments stay on one line when that is the easier scan.
 
-```swift
+```csharp
 // Prefer — one statement, one glance
-nsWindow.setValue(mask.uintValue | fullSizeContentViewMask, forKey: "styleMask")
-
-if nsWindow.responds(to: NSSelectorFromString("setTitlebarSeparatorStyle:")) {
-    nsWindow.setValue(titlebarSeparatorStyleNone, forKey: "titlebarSeparatorStyle")
-}
+var invoice = await _db.Invoices.SingleAsync(i => i.Id == id && i.TenantId == tenantId, ct);
 
 // Avoid — wrapping to a column count
-nsWindow.setValue(
-    mask.uintValue | fullSizeContentViewMask,
-    forKey: "styleMask"
-)
+var invoice =
+    await _db.Invoices
+        .SingleAsync(
+            i => i.Id == id && i.TenantId == tenantId,
+            ct);
 ```
 
-Break a line only at a semantic group: a new clause in a condition, a nested literal, a trailing closure, or a parameter list that is actually hard to scan on one line. Do not put a single argument, label, operator, or opening delimiter on its own line just because the statement crossed 80 or 100 columns.
+Break at semantic groups: one LINQ operator per line in a long query, one clause per line in a complex condition, one argument per line in a long object initializer. Never leave `=`, `return`, `await`, or a lone `(` stranded on its own line.
 
-80 columns is a historical terminal width, not a readability improvement. When choosing or reviewing a formatter `printWidth` / `ColumnLimit`, prefer a generous target such as `120` so ordinary application code stays intact. Match a committed repository config when one exists; if that config repeatedly fragments comfortable statements, fix the config rather than hand-wrapping each call.
-
----
-
-## What the formatter owns vs. what the linter owns
-
-These are different jobs. Do not blur them.
-
-| Tool | Owns | Examples |
-|------|------|----------|
-| **Formatter** (Prettier) | Mechanical style — anything with no semantic meaning | Quotes, semicolons, indent width, trailing commas, line width, argument wrapping, JSX layout |
-| **Linter** (ESLint) | Correctness and intent — things a human could get *wrong* | Unused variables, `no-floating-promises`, exhaustive `switch`, banned APIs, hook rules |
-
-Run Prettier for style and ESLint for bugs. Disable ESLint's stylistic rules so the two don't fight. Once the repository has validated the formatter configuration for its language, the formatter owns those mechanical decisions.
-
----
-
-## Prettier's defaults are a fine baseline — except width
-
-Prettier is opinionated on purpose. Most of its defaults are a reasonable house style for TypeScript:
-
-| Option | Default | Effect |
-|--------|---------|--------|
-| `printWidth` | `80` | Prettier's wrap target — too tight for most application code; override |
-| `tabWidth` | `2` | 2-space indent |
-| `semi` | `true` | Statement-terminating semicolons |
-| `singleQuote` | `false` | Double quotes |
-| `trailingComma` | `'all'` (current) | Trailing commas everywhere legal — cleaner diffs |
-| `arrowParens` | `'always'` | `(x) => x`, not `x => x` |
-| `bracketSpacing` | `true` | `{ foo }` not `{foo}` |
-
-Override `printWidth` as in Prefer comfortable line width. Leave the other defaults unless the repository already chose otherwise. Encode the choice in a **committed `.prettierrc`**, applied by the tool, never by hand.
-
-```json
-// .prettierrc — generous width, then never formatted by hand again
-{
-  "printWidth": 120
-}
+```csharp
+var overdue = await _db.Invoices
+    .Where(i => i.TenantId == tenantId)
+    .Where(i => i.Status == InvoiceStatus.Issued && i.DueDate < today)
+    .OrderBy(i => i.DueDate)
+    .Select(i => new OverdueInvoice(i.Id, i.Number, i.DueDate, i.Total))
+    .ToListAsync(ct);
 ```
+
+80 columns is a historical terminal width. Use 120–140 for application code. If a configured formatter repeatedly fragments comfortable statements, fix the config rather than hand-wrapping call sites.
 
 ---
 
 ## Make it non-negotiable: save + CI
 
-Consistency only holds if it is enforced in two places:
+1. **Editor:** format on save (Rider, Visual Studio "Code Cleanup on save", VS Code C# Dev Kit) reading the committed `.editorconfig`.
+2. **Build:** `<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>` so IDE rules run in `dotnet build`.
+3. **CI gate:**
 
-1. **Editor: format on save.** Each contributor's editor runs the project's Prettier config on every save (e.g. VS Code `editor.formatOnSave` + the Prettier extension picking up `.prettierrc`). This keeps the working tree clean continuously.
-2. **CI: a check gate.** A pipeline step runs `prettier --check .` (and `eslint .`) and fails the build on any unformatted file, so nothing unformatted can merge. A common pattern is a `build`/`verify` script whose first step is `lint`:
-
-```jsonc
-// package.json
-{
-  "scripts": {
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "eslint src/",
-    "build": "bun run lint && bun run format:check && bun run build:app"
-  }
-}
+```bash
+dotnet format --verify-no-changes
+# or, if the repo uses CSharpier:
+dotnet csharpier check .
 ```
-
-Format-on-save keeps it pleasant; the CI check keeps it true.
 
 ---
 
 ## Match the config, not your preference
 
-The single most common formatting clarity failure in review is hand-introducing the "default" style into a repo whose committed config says otherwise.
-
-- If the repo's `.prettierrc` says `semi: false, singleQuote: true`, then semicolon-less single-quoted code **is** the correct style there. Do not "fix" it toward Prettier's stock defaults.
-- Do not wrap files toward `printWidth` 80 because that is Prettier's stock default. If the repo has no committed width, write comfortable lines; when adding config, set `printWidth` to `120`.
-- The config file is the source of truth for the dialects it has been validated against. Accept isolated formatter output; when the same output repeatedly harms readability or macros, fix the configuration instead of hand-correcting each file.
-- Never reformat unrelated lines in a logic PR. If a file needs reformatting, do it in a separate, formatting-only commit so logic diffs stay legible.
-
-## Validate the configuration for the language
-
-A formatter is authoritative only after its configuration has been shown to produce maintainable code for the repository's language and dialect. Parser-backed does not mean universally readable or semantically risk-free.
-
-Reject a configuration that routinely:
-
-- wraps each argument, label, or selector piece onto its own line when the complete statement is still readable;
-- leaves `=`, `return`, a receiver, or a label stranded on its own line;
-- creates whole-file churn to satisfy a line-count or nominal width target.
-
-Objective-C is especially sensitive because long selectors, nested message sends, blocks, adjacent string literals, C declarations, and macros interact with generic C/C++ wrapping rules. Also reject a configuration that rewrites or pads macro bodies and escaped newlines. For detailed Objective-C guidance, read [objective-c.md](objective-c.md).
-
-Fix the formatter configuration before changing source. Preserve intentionally vertical invariant lists, mapping tables, command templates, and low-level calls whose argument positions need auditing.
+- If the repo's `.editorconfig` says `var` only when apparent, follow it — don't "fix" it.
+- Never reformat unrelated lines in a logic PR. Do formatting-only changes in a separate commit, and add that commit to `.git-blame-ignore-revs`.
+- Accept isolated formatter output; when the same output repeatedly harms readability, change the config.
 
 ---
 
 ## When to override the formatter (rarely)
 
-Reach for `// prettier-ignore` only when alignment carries genuine meaning the formatter would destroy:
+Use `// csharpier-ignore` or `#pragma warning disable` with a reason only when alignment carries meaning the formatter would destroy — lookup tables, matrices, test vectors:
 
-```ts
-// prettier-ignore
-const KERNEL = [
-  0, 1, 0,
-  1, 4, 1,
-  0, 1, 0,
-]
+```csharp
+// csharpier-ignore
+private static readonly int[] Kernel =
+[
+    0, 1, 0,
+    1, 4, 1,
+    0, 1, 0,
+];
 ```
 
-Tabular data, ASCII diagrams, and matrices qualify. "I like my arguments aligned this way" does not — hand alignment breaks on the next edit and re-introduces the churn you adopted a formatter to avoid.
-
----
-
-## Other languages, same pattern
-
-The principle is not Prettier-specific; it is *defer mechanical style to a canonical tool*:
-
-| Language | Tool | Note |
-|----------|------|------|
-| TypeScript / JS / JSON / CSS / Markdown | **Prettier** | The reference case here |
-| Go | **gofmt** / **goimports** | Non-negotiable by community norm — there is no style debate in Go |
-| Swift | **swift-format** / SwiftFormat | Adopt one, commit its config, run in CI |
-| Objective-C / Objective-C++ | **clang-format** | Validate an Objective-C-specific style on messages, blocks, literals, and macros before repository-wide use |
-| Python | **Black** (+ isort/ruff) | "Any color you like, as long as it's black" — the same opinionated stance |
-| Rust | **rustfmt** | Same |
+"I like my arguments aligned this way" does not qualify.
 
 ---
 
 ## Diagnostic
 
 | Symptom | Fix |
-|---------|-----|
-| Files disagree on quotes/semicolons/indent | Add a committed formatter config; run it across the repo once |
-| Logic PRs carry large reformatting diffs | Format on save; never reformat by hand; separate formatting commits |
-| Reviewers comment on whitespace/quotes | Move the decision into the config; it is not a review topic |
-| Contributors' editors format differently | Commit the config; enable format-on-save; add a `--check` CI gate |
-| Someone "fixed" a file toward stock defaults | Revert to the repo's `.prettierrc` — the config is the source of truth |
-| Hand-aligned code keeps breaking on edits | Let the formatter wrap; reserve `// prettier-ignore` for true tabular data |
-| Ordinary calls wrapped to ~80 columns | Keep the statement on one line; raise `printWidth` / `ColumnLimit` toward `120` |
-| Formatter repeatedly fragments comfortable calls | Fix the wrap target in config, not each call site |
+|---|---|
+| Files disagree on braces/`var`/usings | Commit an `.editorconfig`; run `dotnet format` once in a separate commit |
+| Logic PRs carry reformatting | Format on save; separate formatting commits; `.git-blame-ignore-revs` |
+| Reviewers comment on whitespace | Move the rule into `.editorconfig` |
+| Style rules only enforced in the IDE | `EnforceCodeStyleInBuild` + CI `--verify-no-changes` |
+| Ordinary calls wrapped to ~80 columns | Keep on one line; raise `max_line_length` / `printWidth` |
+| Analyzer warnings ignored for months | Fix or set severity deliberately; `TreatWarningsAsErrors` |

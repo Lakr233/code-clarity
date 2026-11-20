@@ -1,241 +1,180 @@
 # Abstraction Levels
 
-Abstraction level consistency is one of the most important — and most commonly violated — principles of readable code. A function, class, or module should operate at a single, coherent level of abstraction. Mixing levels forces the reader to context-switch between strategic intent and implementation mechanics, increasing cognitive load on every read.
+A method, class, or module should operate at a single, coherent level of abstraction. Mixing levels forces the reader to context-switch between strategic intent and implementation mechanics.
 
 ## What Is an Abstraction Level?
 
-An abstraction level describes how close to the machine — or how close to the domain — a piece of code operates.
-
 ```
-Domain / Business Level      "Complete the checkout process"
+Domain / Business Level      "Issue the invoice"
        ↓
-Application Level            "Submit the order, then update the cart state"
+Application Level            "Load the draft, issue it, save, publish InvoiceIssued"
        ↓
-Infrastructure Level         "POST to /orders with a JSON body"
+Infrastructure Level         "POST to /invoices, SaveChangesAsync, publish to Service Bus"
        ↓
-Mechanism Level              "Encode dictionary to UTF-8 JSON bytes"
+Mechanism Level              "Serialize to UTF-8 JSON, compute HMAC header"
 ```
 
-Each level is a valid place to write code. The mistake is writing code from two different levels in the same function.
+Each level is a valid place to write code. The mistake is writing two levels in the same method.
 
 ---
 
 ## The Mixing Violation
 
-```swift
-// Mixed levels in one function — hard to read
-func submitOrder(_ order: Order) async throws {
-    // Application level: decide what to do
-    let payload = buildPayload(from: order)
+```csharp
+// Mixed levels in one method — hard to read
+public async Task<IResult> SubmitOrder(CreateOrderRequest request, CancellationToken ct)
+{
+    // Application level
+    var order = Order.Create(request.CustomerId, request.Lines);
 
-    // Mechanism level: low-level URL construction mixed in
-    var components = URLComponents()
-    components.scheme = "https"
-    components.host = "api.example.com"
-    components.path = "/v2/orders"
-    components.queryItems = [URLQueryItem(name: "source", value: "ios-app")]
-    guard let url = components.url else { throw NetworkError.invalidURL }
+    // Infrastructure / mechanism level mixed in
+    using var client = new HttpClient();                       // also a resource bug
+    client.BaseAddress = new Uri("https://erp.example.com");
+    client.DefaultRequestHeaders.Add("X-Api-Key", _config["Erp:ApiKey"]);
+    var json = JsonSerializer.Serialize(new { order.Id, Lines = order.Lines.Select(l => new { l.Sku, l.Quantity }) });
+    var response = await client.PostAsync("/api/orders", new StringContent(json, Encoding.UTF8, "application/json"), ct);
+    if (response.StatusCode != HttpStatusCode.Created) return Results.Problem("ERP rejected order");
 
     // Back to application level
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.httpBody = try JSONEncoder().encode(payload)
-
-    // Infrastructure level: make the call
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard let httpResponse = response as? HTTPURLResponse,
-          httpResponse.statusCode == 201 else {
-        throw NetworkError.unexpectedStatus
-    }
-    let result = try JSONDecoder().decode(OrderConfirmation.self, from: data)
-
-    // Application level again
-    handleConfirmation(result)
+    _db.Orders.Add(order);
+    await _db.SaveChangesAsync(ct);
+    return Results.Created($"/orders/{order.Id}", null);
 }
 ```
-
-The reader must constantly shift their mental frame: "Am I reading business logic? Network logic? URL encoding?"
-
----
 
 ## The Consistent Level Approach
 
-```swift
-// Application level only — consistent
-func submitOrder(_ order: Order) async throws {
-    let payload = buildPayload(from: order)
-    let confirmation = try await network.post(payload, to: .createOrder)
-    handleConfirmation(confirmation)
+```csharp
+// Application level — endpoint handler
+public async Task<IResult> SubmitOrder(CreateOrderRequest request, CancellationToken ct)
+{
+    var order = Order.Create(request.CustomerId, request.Lines);
+    await _erp.RegisterOrderAsync(order, ct);
+    _db.Orders.Add(order);
+    await _db.SaveChangesAsync(ct);
+    return Results.Created($"/orders/{order.Id}", null);
 }
 
-// Infrastructure level only — consistent
-func post<T: Encodable, R: Decodable>(_ body: T, to endpoint: Endpoint) async throws -> R {
-    let request = try buildRequest(for: endpoint, body: body)
-    let data = try await execute(request)
-    return try decode(data)
-}
-
-// Mechanism level only — consistent
-private func buildRequest<T: Encodable>(for endpoint: Endpoint, body: T) throws -> URLRequest {
-    var components = URLComponents()
-    components.scheme = endpoint.scheme
-    components.host = endpoint.host
-    components.path = endpoint.path
-    guard let url = components.url else { throw NetworkError.invalidURL }
-    var request = URLRequest(url: url)
-    request.httpMethod = endpoint.method.rawValue
-    request.httpBody = try JSONEncoder().encode(body)
-    return request
+// Infrastructure level — typed HttpClient
+public sealed class ErpClient(HttpClient http)
+{
+    public async Task RegisterOrderAsync(Order order, CancellationToken ct)
+    {
+        using var response = await http.PostAsJsonAsync("/api/orders", ErpOrder.From(order), ct);
+        response.EnsureSuccessStatusCode();
+    }
 }
 ```
 
-Each function can be read and understood independently. The reader of `submitOrder` never needs to know how HTTP works.
+Base address and API key live in `AddHttpClient<ErpClient>(...)` registration; JSON shape lives in `ErpOrder`. Each piece can be read independently.
 
 ---
 
 ## The Step-Down Rule
 
-When reading a file top-to-bottom, functions should be organized so that each function is followed by the functions it calls at the next level down. The file tells a story from high-level to low-level.
+Order members so each is followed by the members it calls, one level down. The file reads top-down from policy to mechanism: public members first, private helpers below in call order.
 
-```swift
-// Top of file — highest level
-func processCheckout(_ cart: Cart) async throws {
-    try validateCart(cart)
-    let order = try await createOrder(from: cart)
-    try await confirmPayment(for: order)
-    notifyUser(of: order)
+```csharp
+public async Task CheckoutAsync(Cart cart, CancellationToken ct)
+{
+    EnsureCheckoutable(cart);
+    var order = await CreateOrderAsync(cart, ct);
+    await CapturePaymentAsync(order, ct);
+    await NotifyCustomerAsync(order, ct);
 }
 
-// One level down
-private func validateCart(_ cart: Cart) throws { ... }
-private func createOrder(from cart: Cart) async throws -> Order { ... }
-private func confirmPayment(for order: Order) async throws { ... }
-private func notifyUser(of order: Order) { ... }
-
-// Two levels down
-private func validateItems(_ items: [CartItem]) throws { ... }
-private func buildOrderPayload(from cart: Cart) -> OrderPayload { ... }
-// ...
+private static void EnsureCheckoutable(Cart cart) { ... }
+private async Task<Order> CreateOrderAsync(Cart cart, CancellationToken ct) { ... }
+private async Task CapturePaymentAsync(Order order, CancellationToken ct) { ... }
+private async Task NotifyCustomerAsync(Order order, CancellationToken ct) { ... }
 ```
 
-A reader who wants high-level understanding reads the top. A reader debugging a specific step scrolls to find it. The structure itself communicates the hierarchy.
+Follow the repository's member ordering convention (e.g. StyleCop SA1201/SA1202) if it has one; step-down then applies within the private section.
 
 ---
 
 ## Identifying Level Violations
 
-### Red flag: A function calls other named functions AND does raw computation
+### Named calls mixed with raw computation
 
-```swift
-// Violation — named function calls mixed with inline computation
-func applyDiscount(to order: Order) -> Decimal {
-    let eligibleItems = filterEligibleItems(order.items)  // named call
-
-    // inline computation mixed in — wrong level
-    let subtotal = eligibleItems.reduce(Decimal.zero) { $0 + $1.price * Decimal($1.quantity) }
-    let discountRate = Decimal(0.15)
-    return subtotal * (1 - discountRate)
+```csharp
+// Violation
+public decimal ApplyDiscount(Order order)
+{
+    var eligible = SelectEligibleLines(order.Lines);
+    var subtotal = eligible.Sum(l => l.UnitPrice * l.Quantity);   // inline mechanism
+    return subtotal * (1 - 0.15m);                                // magic number
 }
 
-// Fix — extract the computation
-func applyDiscount(to order: Order) -> Decimal {
-    let eligibleItems = filterEligibleItems(order.items)
-    return computeDiscountedTotal(for: eligibleItems)
-}
-
-private func computeDiscountedTotal(for items: [OrderItem]) -> Decimal { ... }
+// Fix
+public decimal ApplyDiscount(Order order) => DiscountedTotal(SelectEligibleLines(order.Lines));
 ```
 
-### Red flag: A view contains networking or business logic
+### UI or endpoint contains business rules or data access
 
-In SwiftUI or UIKit, views are at the presentation level. Anything beyond layout, animation, and user input handling belongs elsewhere:
+Razor pages, Blazor components, controllers, and minimal-API lambdas are presentation. Validation rules, EF queries, and HTTP calls to other systems belong in the application or infrastructure layer.
 
-```swift
-// Violation — view contains business logic and networking
-struct ProfileView: View {
-    var body: some View {
-        Button("Save") {
-            // Business rule: validate
-            guard user.email.contains("@") else { return }
-
-            // Infrastructure: make network call directly in view
-            Task {
-                let data = try? await URLSession.shared.data(from: saveURL)
-                // ...
-            }
-        }
+```csharp
+// Violation — Blazor component with business rule and data access
+@code {
+    async Task Save()
+    {
+        if (!_model.Email.Contains('@')) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Customers.Update(_model);
+        await db.SaveChangesAsync();
     }
 }
 
-// Prefer — view delegates to view model
-struct ProfileView: View {
-    @State private var viewModel: ProfileViewModel
-
-    var body: some View {
-        Button("Save") {
-            Task { await viewModel.saveProfile() }
-        }
-    }
+// Prefer — component delegates
+@code {
+    async Task Save() => _result = await CustomerProfile.UpdateAsync(_model, _cts.Token);
 }
 ```
 
-### Red flag: A repository contains presentation logic
+### Data layer contains presentation
 
-```swift
-// Violation — data layer formats for display
-class UserRepository {
-    func fetchDisplayName(for id: String) async -> String {
-        let user = try? await api.fetchUser(id: id)
-        return "\(user?.firstName ?? "") \(user?.lastName ?? "")".trimmingCharacters(in: .whitespaces)
-    }
-}
+```csharp
+// Violation — repository formats for display
+public async Task<string> GetDisplayNameAsync(CustomerId id, CancellationToken ct) { ... $"{c.FirstName} {c.LastName}".Trim() ... }
 
-// Prefer — repository returns model, presentation logic lives in presentation layer
-class UserRepository {
-    func fetchUser(id: String) async throws -> User { ... }
-}
-
-// Display formatting in the ViewModel or a formatter type
-extension User {
-    var displayName: String { "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces) }
-}
+// Prefer — repository returns the model; display lives on the model or in presentation
+public string DisplayName => $"{FirstName} {LastName}".Trim();
 ```
 
 ---
 
-## Abstraction Levels in Swift Architecture
+## Abstraction Levels in a .NET Application
 
-| Layer | Abstraction Level | Allowed to contain |
-|-------|------------------|--------------------|
-| SwiftUI View / UIViewController | Presentation | Layout, animation, user input routing |
-| ViewModel / Presenter | Application | State transformation, validation rules, use case coordination |
-| Repository / Service | Domain | Domain operations, business rules |
-| Network / Persistence | Infrastructure | HTTP, JSON, Core Data, file I/O |
-| Utilities / Extensions | Mechanism | Low-level algorithms, type conversions |
-
-When code from one row appears in a type from another row, there is an abstraction level violation. Move the code to its correct layer.
+| Layer | Level | Allowed to contain |
+|---|---|---|
+| Razor / Blazor / Controller / Endpoint | Presentation | Binding, routing, auth attributes, DTO mapping, status codes |
+| Handler / Application service | Application | Use-case orchestration, transactions, authorization decisions |
+| Domain entities / value objects | Domain | Business rules, invariants |
+| EF Core, HttpClient, file/bus | Infrastructure | SQL, HTTP, serialization, I/O |
+| Extensions / low-level utilities | Mechanism | Algorithms, conversions |
 
 ---
 
 ## Common Violations and Fixes
 
 | Violation | Location | Fix |
-|-----------|----------|-----|
-| URL construction in ViewModel | ViewModel | Extract to NetworkLayer or Endpoint enum |
-| String formatting in Repository | Repository | Move to ViewModel property or Formatter type |
-| Business rule in View | View | Move to ViewModel method |
-| JSON parsing in ViewController | ViewController | Move to NetworkLayer or ResponseDecoder |
-| Authentication token injection in UI code | Any UI layer | Move to NetworkLayer or RequestInterceptor |
-| Retry logic in a ViewModel | ViewModel | Move to NetworkLayer with a RetryPolicy |
+|---|---|---|
+| URL or header construction in a handler | Application | Typed `HttpClient` + registration |
+| `string.Format` for display in a repository | Infrastructure | Property on model / view model |
+| Business rule in Razor/Blazor | Presentation | Domain method or application service |
+| `JsonSerializer` calls in a controller | Presentation | Let the framework bind, or a typed client |
+| Retry loops in a handler | Application | Resilience pipeline (`AddStandardResilienceHandler`, Polly) |
+| `DbContext` in a domain entity | Domain | Pass data in; keep entities persistence-ignorant |
 
 ---
 
 ## Summary
 
 | Question | Good sign | Bad sign |
-|----------|-----------|---------|
-| Can you describe the function's level in one word (orchestration / transformation / mechanism)? | Yes | "It does a bit of both" |
-| Do all calls in the function feel like they belong at the same height? | Yes | Some are high-level, some are raw operations |
-| Does the file read like a top-down hierarchy? | Yes | Functions appear in unrelated order |
-| Does the view contain only presentation code? | Yes | It has service calls or validation logic |
-| Does the repository contain only domain operations? | Yes | It formats strings for display |
+|---|---|---|
+| Can you name the method's level in one word? | Yes | "It does a bit of both" |
+| Do all calls feel like the same height? | Yes | Some high-level, some raw operations |
+| Does the file read top-down? | Yes | Members in arbitrary order |
+| Does the UI contain only presentation code? | Yes | EF queries or validation rules |
+| Does the data layer contain only persistence? | Yes | Display formatting |
