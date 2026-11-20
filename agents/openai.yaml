@@ -1,7 +1,0 @@
-interface:
-  display_name: "Code Clarity (C#)"
-  short_description: "Reduce state, branches, exceptions, and seams in C#; assert invariants"
-  default_prompt: "Use $code-clarity to simplify this C# change by removing unnecessary state, exceptions, branches, interfaces, and abstractions, making illegal states unrepresentable, and asserting invariants while preserving behavior."
-
-policy:
-  allow_implicit_invocation: true

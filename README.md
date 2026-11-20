@@ -59,8 +59,6 @@ This service has 7 constructor dependencies and every test uses Moq. Simplify.
 ```
 code-clarity/
 ├── SKILL.md                              # Working method, decision gates, review verdicts
-├── agents/
-│   └── openai.yaml                       # UI metadata
 └── references/
     ├── negative-space-programming.md     # Assertions, invariants, pair assertions, bounds
     ├── parse-dont-validate.md            # Value objects, typed IDs, closed hierarchies
