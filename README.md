@@ -13,6 +13,7 @@ Forked from a multi-language (Swift / Go / Objective-C / TypeScript) version and
 | **Nullability & Exceptions** | Nullable reference types, BCL guard helpers, exceptions vs `TryX` vs `Result`, catching rules, logging once |
 | **Async & Resources** | Async all the way, `CancellationToken` forwarding, no `async void`, `IDisposable`/`await using` ownership, DI lifetimes |
 | **C# & .NET Idioms** | Records vs sealed classes, pattern matching, LINQ, DI without ceremony, `TimeProvider`, analyzers as enforcement, ASP.NET Core layering |
+| **Blazor Components** | Parameter vs state ownership, `EventCallback` up, markup shows / code decides, `RenderFragment` slots over flags, lifecycle, disposal, bUnit |
 | **Naming Conventions** | .NET casing, `Get`/`Find`/`TryGet` vocabulary, `Async` suffix, red-flag type names |
 | **Early Return** | Guard clauses, pattern-based guards that bind, when not to use them |
 | **Method Design** | One contract, one abstraction level, strong-typed parameters, return over mutate |
@@ -36,6 +37,7 @@ The skill activates when you ask Claude to:
 - Replace primitive obsession or boolean piles with value objects, records, or a closed state hierarchy
 - Clean up nullability (`!` operators, redundant null checks, nullable state machines)
 - Review async code for missing `CancellationToken`s, `async void`, sync-over-async, or leaked disposables
+- Clean up Blazor components that mutate parameters, sync state by hand, or hide business rules in markup
 - Split a grab-bag service or `Helpers` class
 - Reduce interface-per-class and mock-heavy tests
 - Set up `.editorconfig`, analyzers, and a formatting CI gate
@@ -65,6 +67,7 @@ code-clarity/
     ├── nullability-and-exceptions.md     # NRT, guards, exceptions vs Result
     ├── async-and-resources.md            # CancellationToken, IDisposable, DI lifetimes
     ├── csharp-and-dotnet.md              # Language idioms, DI, analyzers, layering
+    ├── blazor.md                         # Component state, callbacks, lifecycle, bUnit
     ├── naming-conventions.md
     ├── early-return.md
     ├── function-design.md

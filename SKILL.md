@@ -1,6 +1,6 @@
 ---
 name: code-clarity
-description: Write, review, and simplify C#/.NET code so behavior has one owner, state is minimal and derivable, invalid states are unrepresentable, invariants are asserted (negative space programming), failures are grouped by real recovery behavior, APIs expose only necessary concepts, control flow stays flat, and tests protect observable outcomes without forcing production abstractions. Use when C# code grows through incremental feedback, a diff adds many states/exceptions/branches/types/interfaces, nullability or validation is scattered, async or IDisposable ownership is unclear, naming or flow is hard to follow, DI registrations and mocks multiply, or a refactor should reduce concepts while preserving behavior and repository conventions.
+description: Write, review, and simplify C#/.NET code so behavior has one owner, state is minimal and derivable, invalid states are unrepresentable, invariants are asserted (negative space programming), failures are grouped by real recovery behavior, APIs expose only necessary concepts, control flow stays flat, and tests protect observable outcomes without forcing production abstractions. Use when C# code grows through incremental feedback, a diff adds many states/exceptions/branches/types/interfaces, nullability or validation is scattered, async or IDisposable ownership is unclear, naming or flow is hard to follow, DI registrations and mocks multiply, Blazor components mutate parameters or mix business logic into markup, or a refactor should reduce concepts while preserving behavior and repository conventions.
 ---
 
 # Code Clarity (C# / .NET)
@@ -107,6 +107,7 @@ For naming, control flow, methods, types, files, and local style, load only the 
 - [references/nullability-and-exceptions.md](references/nullability-and-exceptions.md) — NRT, guard clauses, exceptions vs `Result`
 - [references/async-and-resources.md](references/async-and-resources.md) — `CancellationToken`, `IDisposable`, `await using`, async pitfalls
 - [references/csharp-and-dotnet.md](references/csharp-and-dotnet.md) — language idioms, records, pattern matching, DI, analyzers
+- [references/blazor.md](references/blazor.md) — component state ownership, parameters vs `EventCallback`, markup vs logic, lifecycle, disposal, bUnit
 - [references/naming-conventions.md](references/naming-conventions.md)
 - [references/early-return.md](references/early-return.md)
 - [references/function-design.md](references/function-design.md)
