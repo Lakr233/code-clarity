@@ -19,7 +19,7 @@ Forked from a multi-language (Swift / Go / Objective-C / TypeScript) version and
 | **Abstraction Levels** | Endpoint / application / domain / infrastructure separation, step-down rule |
 | **Class & Record Design** | Ownership, invariants inside the type, record vs class vs struct, accumulation |
 | **File Organization** | One type per file, namespaces = folders, feature folders, named constants |
-| **Formatting Consistency** | `.editorconfig` + `dotnet format` / CSharpier, comfortable line width, CI gate |
+| **Formatting Consistency** | `.editorconfig` + `dotnet format` / CSharpier, structural indentation, comfortable line width, CI gate |
 | **Repository Conventions** | Inferring and preserving the local house style |
 | **Dependencies & Test Seams** | One canonical implementation, seams only where behavior varies, fakes over mocks, Testcontainers / `WebApplicationFactory` |
 

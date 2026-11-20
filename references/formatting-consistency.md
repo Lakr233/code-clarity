@@ -96,6 +96,76 @@ var overdue = await _db.Invoices
 
 ---
 
+## Indentation shows structure
+
+Indentation is how a reader sees the shape of code before reading a word. Every level means "this only runs inside that," so the left edge must match the real logical structure, and nothing else.
+
+**Depth is a cost.** Each level is one more condition the reader has to keep in mind. Aim for no more than two or three levels inside a method body. When it gets deeper, flatten it with guard clauses ([early-return.md](early-return.md)), pattern matching, or a method that names the inner operation. Don't flatten it by reformatting.
+
+```csharp
+// Avoid — the work sits four levels deep
+public async Task SendRemindersAsync(CancellationToken ct)
+{
+    foreach (var invoice in await _invoices.ListIssuedAsync(ct))
+    {
+        if (invoice.DueDate < _clock.Today)
+        {
+            if (invoice.Customer.Email is { } email)
+            {
+                await _mail.SendReminderAsync(email, invoice, ct);
+            }
+        }
+    }
+}
+
+// Prefer — filter first, the work stays at one level
+public async Task SendRemindersAsync(CancellationToken ct)
+{
+    var overdue = (await _invoices.ListIssuedAsync(ct)).Where(i => i.DueDate < _clock.Today);
+
+    foreach (var invoice in overdue)
+    {
+        if (invoice.Customer.Email is not { } email)
+            continue;
+
+        await _mail.SendReminderAsync(email, invoice, ct);
+    }
+}
+```
+
+**Continuation lines indent one level, not to a column.** When a statement wraps, indent the next line one level (4 spaces) from where the statement starts. Don't align it under an opening parenthesis or `=`. Column alignment shifts every time something is renamed, makes diffs noisy, and pushes code toward the right edge.
+
+```csharp
+// Prefer
+var summary = new InvoiceSummary(
+    invoice.Number,
+    invoice.Customer.DisplayName,
+    invoice.Total);
+
+// Avoid — aligned to the parenthesis; renaming InvoiceSummary re-indents every line
+var summary = new InvoiceSummary(invoice.Number,
+                                 invoice.Customer.DisplayName,
+                                 invoice.Total);
+```
+
+**Blocks open and close at the same level.** The lines inside switch expressions, object and collection initializers, and lambda bodies go one level in. The closing brace or bracket goes back to the column where the statement started, so the end of the block is easy to find.
+
+```csharp
+var label = invoice.Status switch
+{
+    InvoiceStatus.Draft => "Concept",
+    InvoiceStatus.Issued => "Verzonden",
+    InvoiceStatus.Paid => "Betaald",
+    _ => throw new UnreachableException(),
+};
+```
+
+**Blank lines are vertical indentation.** Use one blank line to separate steps within a method (load, decide, act). Don't use blank lines everywhere or nowhere; both hide where one step ends and the next begins.
+
+Spaces vs tabs and the indent size belong in `.editorconfig` (`indent_style = space`, `indent_size = 4`) and are never hand-edited. The decisions above are the ones the formatter can't make for you: the formatter controls how much whitespace there is, and you control how deep the structure goes.
+
+---
+
 ## Make it non-negotiable: save + CI
 
 1. **Editor:** format on save (Rider, Visual Studio "Code Cleanup on save", VS Code C# Dev Kit) reading the committed `.editorconfig`.
@@ -145,4 +215,6 @@ private static readonly int[] Kernel =
 | Reviewers comment on whitespace | Move the rule into `.editorconfig` |
 | Style rules only enforced in the IDE | `EnforceCodeStyleInBuild` + CI `--verify-no-changes` |
 | Ordinary calls wrapped to ~80 columns | Keep on one line; raise `max_line_length` / `printWidth` |
+| Method body four or more levels deep | Guard clauses, filter before looping, extract the inner operation |
+| Wrapped arguments aligned under `(` | One-level continuation indent |
 | Analyzer warnings ignored for months | Fix or set severity deliberately; `TreatWarningsAsErrors` |

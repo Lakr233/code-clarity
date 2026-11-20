@@ -89,7 +89,7 @@ Keep the source of truth with its owner: interpret, validate, and derive a value
 
 Keep the happy path flat with guard clauses. Extract a method when it names a coherent operation or hides a lower abstraction level—not merely to reduce line count. Avoid pass-through services whose only effect is to enlarge the DI graph.
 
-Keep a complete statement, call, LINQ chain, or condition on one line when it remains locally readable. Break at semantic groups (one LINQ operator per line for long queries, one clause per line for complex conditions) only when the unwrapped form is hard to scan. For line width and formatter-owned style, read [references/formatting-consistency.md](references/formatting-consistency.md).
+Keep a complete statement, call, LINQ chain, or condition on one line when it remains locally readable. Break at semantic groups (one LINQ operator per line for long queries, one clause per line for complex conditions) only when the unwrapped form is hard to scan. Keep indentation honest: depth equals nesting, stay within two or three levels in a method body, and indent continuation lines one level instead of aligning to a column. For indentation, line width and formatter-owned style, read [references/formatting-consistency.md](references/formatting-consistency.md).
 
 Apply the grain of C#:
 
